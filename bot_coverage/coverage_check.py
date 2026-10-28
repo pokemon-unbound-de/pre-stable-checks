@@ -1,0 +1,74 @@
+"""Isolated scenario coverage pilot; no text gates or release authorization."""
+import argparse
+import hashlib
+import json
+import re
+import sys
+from pathlib import Path
+
+ADDRESS = re.compile(r'^(?:0x)?([0-9a-fA-F]{8})$')
+BP = re.compile(r'^\d+\s+BP\s+[0-9A-Fa-f]{2}\s+\d+\s+\d+\s+([0-9A-Fa-f]{8})\s+[0-9A-Fa-f]{2}\s+[0-9A-Fa-f]+\s*$')
+FATAL = re.compile(r'\b(?:fatal|panic|segmentation fault|assertion failed)\b|Traceback \(most recent call last\)',re.I)
+PNG = b'\x89PNG\r\n\x1a\n'
+
+def validate(m):
+    if not isinstance(m,dict) or type(m.get('schema')) is not int or m['schema']!=1:
+        raise ValueError('schema must be 1')
+    if not isinstance(m.get('scenario'),str) or not m['scenario'].strip():
+        raise ValueError('scenario required')
+    if not isinstance(m.get('rom_sha256'),str) or not re.fullmatch(r'[0-9a-fA-F]{64}',m['rom_sha256']):
+        raise ValueError('invalid SHA-256')
+    if not isinstance(m.get('expected_bp'),str) or not ADDRESS.fullmatch(m['expected_bp']):
+        raise ValueError('invalid BP address')
+    if type(m.get('min_screenshots')) is not int or m['min_screenshots']<1:
+        raise ValueError('positive screenshot count required')
+    return ADDRESS.fullmatch(m['expected_bp']).group(1).upper()
+
+def inspect_run(manifest,rom_sha256,textlog,emulator_log,done,screenshot_count):
+    target=validate(manifest)
+    reasons=[]
+    if rom_sha256.lower()!=manifest['rom_sha256'].lower(): reasons.append('rom_hash_mismatch')
+    if textlog is None: reasons.append('textlog_missing')
+    addresses={m.group(1).upper() for line in (textlog or '').splitlines() if (m:=BP.fullmatch(line))}
+    if target not in addresses: reasons.append('target_bp_missing')
+    if not done: reasons.append('done_missing')
+    if screenshot_count<manifest['min_screenshots']: reasons.append('screenshots_insufficient')
+    if emulator_log is None: reasons.append('emulator_log_missing')
+    if any(FATAL.search(log or '') for log in (emulator_log,textlog)): reasons.append('fatal_log')
+    return dict(schema=1,scenario=manifest['scenario'],coverage='red' if reasons else 'green',
+                reasons=reasons,screenshots=screenshot_count,release_authorization=False)
+
+def file_hash(path):
+    digest=hashlib.sha256()
+    with path.open('rb') as stream:
+        for chunk in iter(lambda:stream.read(1024*1024),b''): digest.update(chunk)
+    return digest.hexdigest()
+
+def read_log(path):
+    return path.read_text(encoding='utf-8',errors='strict') if path.is_file() else None
+
+def main(argv=None):
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--manifest',required=True,type=Path)
+    p.add_argument('--rom',required=True,type=Path)
+    p.add_argument('--run-dir',required=True,type=Path)
+    a=p.parse_args(argv)
+    try:
+        m=json.loads(a.manifest.read_text(encoding='utf-8'));validate(m)
+        if not a.run_dir.is_dir(): raise ValueError('run directory missing')
+        count=0
+        folder=a.run_dir/'screenshots'
+        if folder.is_dir():
+            for path in folder.iterdir():
+                if path.is_file() and path.suffix.lower()=='.png':
+                    with path.open('rb') as stream:
+                        if stream.read(8)==PNG: count+=1
+        result=inspect_run(m,file_hash(a.rom),read_log(a.run_dir/'druckerlog.txt'),
+                           read_log(a.run_dir/'mgba.log'),(a.run_dir/'DONE').is_file(),count)
+    except (ValueError,OSError,TypeError) as error:
+        print(json.dumps(dict(coverage='invalid_input',error_type=type(error).__name__)),file=sys.stderr)
+        return 1
+    print(json.dumps(result,sort_keys=True))
+    return 0 if result['coverage']=='green' else 2
+
+if __name__=='__main__': sys.exit(main())

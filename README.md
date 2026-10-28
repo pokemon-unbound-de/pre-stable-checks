@@ -23,8 +23,8 @@ Prüft pro Zeile die Spalten `en` und `de` eines Korpus-CSVs
 |---|---|
 | `unknown_escape` (C1) | Backslash-Folge, die nicht in der Escape-Grammatik des Spiels ist (Referenz: `BACKSLASH_CODES` in `lib/pcs_text.py`) |
 | `quote_imbalance` (C2) | Kaputte Zitat-Paarung: `\qc` ohne Oeffnung oder ungeschlossenes Zitat. Gültige Paare: `(\qo,\qc)` und `(\qo,\qo)` |
-| `malformed_bracket` (C3) | `[#..]` / `[..]`-Code in ungültiger Form |
-| `fc_odd_shape` (C4) | FC-Code in 10-Hex-Form (vermutet: mehrere FC-Codes in einer Klammer; Byte-Stream korrekt → Review statt Fehler) |
+| `malformed_bracket` (C3) | `[#..]`-Rohbytefolge in ungültiger Form (ungerade Hex oder nicht-hex; **gerade Hex = gültig** nach Encoder-Regel) |
+| `fc_odd_shape` (C4) | FC + 10 Hex — **informativ**: syntaktisch gültige Rohbytefolge, semantisch zu prüfen; zählt **nicht** gegen die Formatgültigkeit |
 | `byte_overflow` (B1) | Vorlagen-Zeile: `de_kurz_vorschlag` > `max_bytes` (GBA-PCS-Bytes, 1 Byte/Zeichen) |
 | `pixel_over` (B2) | Zeilen-Pixelbreite > `--max-pixels` (nur mit Flag; Default: nur Aggregat-Statistik, da Bildschirm-Limits je Screen/Buffer unterschiedlich sind) |
 
@@ -45,8 +45,12 @@ ohne Textinhalte) und `format/format_report.md` (Aggregat-Report).
 
 Am Korpus **v0.1.7.2** (17.188 Zeilen) kalibriert — das Spiel läuft
 fehlerfrei, daher gilt: was im Korpus und im EN-Original vorkommt,
-ist gültig. Ergebnis am Kalibrierungs-Korpus: **6 Befunde**
-(1× C3, 4× C4, 1× C1), d. h. das Korpus ist formatgültig.
+ist gültig. Ergebnis am Kalibrierungs-Korpus nach der QA-Korrektur
+(2026-10-28): **5 Befunde** (1× C1 in der EN-Spalte, 4× C4
+informativ); **C3 = 0** (der ehemalige `[#FEFD02FC09]`-Befund war
+Falschpositiv nach der Encoder-Regel). Das Formatgültigkeits-Urteil
+gelten **nur innerhalb der Prüf-Abgrenzung** (s. u.), nicht als
+Gesamturteil über das gesamte Spiel.
 
 Gültige Formen (Auszug; Details im Modul-Docstring):
 
@@ -54,13 +58,20 @@ Gültige Formen (Auszug; Details im Modul-Docstring):
   2-Zeiger `\pk \Po \mn \Ke \Bl \Lo \Ck \Lv \qo \qc \sm \sf \au \ad \ar \al`
   (Grammatik = `BACKSLASH_CODES`/`CONTROL_TOKEN_RE` der Referenz,
   inkl. Lookahead-Regeln `pk(?![A-Za-z])` / `Po(?![A-Za-z])`)
-- **Klammer-Codes:** `[#FCxx/xxxx/xxxxxx/xxxxxxxx]` (2/4/6/8 Hex),
-  `[#FDxx]`, `[#F7xx]/[#F8xx]/[#F9xx]` (auch ohne Argument),
-  generische `[#XX]` (genau 2 Hex, z. B. `[#0A]` Menütaste,
-  `[#B9]` Namensplatz, `[#FA]` Steuerbyte), ohne `#`: `[FCxx]…`,
-  `[FDxx]`, Makronamen `[player]`, `[buffer1]` …
+- **Klammer-Codes, `#`-Familie (Rohbytefolgen):** DIFFERENZIELLE
+  REGEL gegen den echten Encoder `tools/pcs_encode.py`
+  (`_RAW`-Regex `[#HH…]` + `bytes.fromhex`, verifiziert 2026-10-28):
+  `#` + **gerade** Hex-Ziffern (≥ 2) = gültige Rohbytefolge
+  (z. B. `[#0A]` Menütaste, `[#FA]` Steuerbyte, `[#FEFD02FC09]`);
+  **ungerade** Hex oder nicht-hex = `malformed_bracket` (C3).
+- **Klammer-Codes ohne `#`** (Makro-Kurzformen + Namen): `[FCxx]…`
+  (2/4/6/8 Hex nach FC), `[FDxx]`, `[F7xx]/[F8xx]/[F9xx]` (auch ohne
+  Argument), Makronamen `[player]`, `[buffer1]` …
 - **Zitate:** `\qo` schließt Zitate ebenfalls (`\qo…\qo` kommt 16×
   im Korpus vor, u. a. im EN-Original — gültig)
+- **C4** (FC + 10 Hex) = **informativ**: syntaktisch gültige
+  Rohbytefolge, semantisch zu prüfen — zählt nicht gegen die
+  Formatgültigkeit
 - **B1-Prüfung** nur für die 21 Zeilen von `item_kurzformen.csv`
   (bekannte Buffer-Limits; die Template-Adressen dort sind
   ROM-Skript-Adressen, keine Korpus-IDs)
@@ -69,6 +80,22 @@ Bewusst **keine** strikte FC-Argument-Prüfung: Der Korpus nutzt
 `[FC01]`-Kurzformen (5.000+ Zeilen), die der Spiel-Laufzeit
 einwandfrei verarbeitet — eine Semantik-Prüfung würde massenhaft
 Fehlalarme liefern.
+
+### Prüf-Abgrenzung (was der Validator prüft und was nicht)
+
+Das Formatgültigkeits-Urteil beschränkt sich bewusst auf den
+geprüften Umfang und ist **kein** Gesamturteil:
+
+- **C1/C2/C3:** alle Korpus-Zeilen, Spalten `en` und `de`.
+- **B1:** nur die 21 Vorlagen-Zeilen von `item_kurzformen.csv`.
+- **B2:** standardmäßig **aus** (nur Aggregat-Statistik), weil die
+  Screen-Limits je Screen/Buffer unterschiedlich sind.
+- **Nicht geprüft:** Laufzeit-Verhalten, echtes Screen-Layout,
+  ROM-Tabellen.
+
+Der Report enthält deshalb pro Befund die Trennung
+*formatrelevant* (C1/C2/C3/B1) vs. *informativ* (C4) und ein
+explizites Formatgültigkeits-Urteil innerhalb dieser Abgrenzung.
 
 ### Herkunft der Metriken
 

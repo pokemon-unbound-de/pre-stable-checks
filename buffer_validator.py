@@ -18,11 +18,16 @@ Pruefungen (pro Zeile, Spalten `en` und `de`):
                           (\\qo,\\qc) und (\\qo,\\qo) — letzteres kommt
                           im Korpus vor (EN-Original + DE) und ist
                           gueltig (Spiel laeuft fehlerfrei).
-  C3  malformed_bracket   [#..] / [..] Code in ungueltiger Form
-  C4  fc_odd_shape        FC-Code in 10-Hex-Form (vermutet: zwei
-                          FC-Codes in einer Klammer, z. B.
-                          [#FC134BFC0600] = [FC134B][FC0600];
-                          Byte-Stream korrekt, Spiel laeuft -> Review)
+  C3  malformed_bracket   [#..]-Rohbytefolge in ungueltiger Form:
+                          ungerade Hex oder nicht-hex. Gerade
+                          Hex-Rohbytefolgen sind GUELTIG
+                          (Encoder-Regel, differenziell verifiziert;
+                          z. B. [#FEFD02FC09] = 5 Bytes)
+  C4  fc_odd_shape        FC + 10 Hex — INFORMATIV: syntaktisch
+                          gueltige Rohbytefolge, nur semantisch zu
+                          pruefen (vermutet: zwei FC-Codes in einer
+                          Klammer, z. B. [#FC134BFC0600]). ZaeHLT
+                          NICHT gegen die Formatgueltigkeit.
   B1  byte_overflow       Vorlagen-Zeile: de_kurz_vorschlag > max_bytes
                           (GBA-PCS-Bytes, 1 Byte/Zeichen)
   B2  pixel_over          zeilenweise Pixelbreite > --max-pixels
@@ -30,14 +35,21 @@ Pruefungen (pro Zeile, Spalten `en` und `de`):
 
 Kalibrierung (Korpus v0.1.7.2, 17.188 Zeilen, Spiel laeuft fehlerfrei):
 - Escape-Set = BACKSLASH_CODES der Referenz (16 x 2-Zeiger + 10 x
-  1-Zeiger). Sämtliche im Korpus vorkommenden Escapes sind bekannt;
-  die scheinbar seltenen Formen (\\Po, \\Ke, \\Bl, \\Lo, \\Ck, \\mn,
-  \\r, \\<, \\>, \\+) sind gueltige Escapes (Name-/Steuer-Codes).
-- Klammer-Codes: [#FC + 2/4/6/8 Hex], [#FDxx], [#F7xx]/[#F8xx]/[#F9xx]
-  (auch ohne Argument), generische [#XX] (genau 2 Hex, z. B. [#0A]
-  Menütaste, [#B9] Namensplatz, [#FA] Steuerbyte).
-- Ergebnis am Kalibrierungs-Korpus: 5 Befunde (1 x C3, 4 x C4),
-  d. h. das Korpus ist formatgueltig.
+  1-Zeiger). Sämtliche im Korpus vorkommenden Escapes sind bekannt.
+- Klammer-Codes — # -Familie (Rohbytefolgen), DIFFERENZIELLE REGEL
+  gegen den echten Encoder tools/pcs_encode.py (_RAW-Regex +
+  bytes.fromhex, verifiziert 2026-10-28): # + GERADE Hex (>= 2) =
+  gueltig (z. B. [#0A], [#FA], [#FC01], [#FEFD02FC09]); UNGERADE
+  Hex oder nicht-hex = C3 (Encoder: fromhex scheitert bzw. Regex
+  matcht nicht => nicht encodierbar). Ohne # (Makro-Kurzformen +
+  Namen): [FCxx]... (2/4/6/8 Hex nach FC), [FDxx], [F7xx]/[F8xx]/
+  [F9xx], Makronamen [player], [buffer1], ...
+- C4 (FC + 10 Hex) = nur informativ (syntaktisch gueltig,
+  semantisch zu pruefen), zaehlt nicht gegen die Formatgueltigkeit.
+- Ergebnis am Kalibrierungs-Korpus nach der QA-Korrektur
+  (2026-10-28): 5 Befunde (1 x C1 in der EN-Spalte, 4 x C4
+  informativ); C3 = 0 (der ehemalige [#FEFD02FC09]-Befund war
+  Falschpositiv nach der Encoder-Regel).
 
 Wichtig:
 - **Kein** automatisches Aenderen — nur Befunde + Reproduzierbarkeit.
@@ -178,14 +190,13 @@ MACRO_NAMES = frozenset(
     ("player", "buffer1", "buffer2", "buffer3", "kun", "rival",
      "up", "down", "left", "right"))
 
-# Gueltige FC-Argument-Laengen (Anzahl Hex-Ziffern hinter 'FC'):
-#   2/4/6: ueblich im Korpus (5825/4870/10 Vorkommen)
-#   8:     z. B. FC04 mit 3 Argumenten ([#FC040D0E0F], 2x im Korpus)
-#   10:    4x im Korpus — Konkatenation zweier FC-Codes in einer Klammer
-#          (z. B. [#FC134BFC0600] = [FC134B][FC0600]); der Byte-Stream
-#          ist korrekt und das Spiel laeuft, daher nur Review (C4),
-#          kein Formatfehler (C3).
-FC_HEX_OK = (2, 4, 6, 8)
+# Gueltige FC-Argument-Laengen (Anzahl Hex-Ziffern hinter 'FC') —
+# gilt nur fuer die KURZFORM-Familie ohne # ([FCxx]...). Die # -
+# Familie (Rohbytefolgen) folgt der Encoder-Regel (gerade Hex =
+# gueltig, siehe _bracket_ok). FC + 10 Hex ist formatgueltig
+# (gerade) und wird nur informativ als C4 markiert (vermutet:
+# zwei FC-Codes in einer Klammer, z. B. [#FC134BFC0600]).
+FC_HEX_OK = (2, 4, 6, 8)  # 2/4/6: 5825/4870/10 Vorkommen; 8: z. B. FC04
 FC_HEX_ODD = 10
 
 
@@ -200,15 +211,22 @@ def _fc_hex_len(core: str):
 def _bracket_ok(tok: str) -> bool:
     """tok = Inhalt ohne Klammern, z. B. '#FC0106', 'FD0F', 'player'.
 
-    Gueltige Formen (am Korpus v0.1.7.2 + Referenz kalibriert):
-      #FCxx / #FCxxxx / #FCxxxxxx / #FCxxxxxxxx  (2/4/6/8 Hex)
-      #FDxx  (Puffer-Makro, 2 Hex)
-      #F7xx / #F8xx / #F9xx  (Makro-Präfix + 2 Hex) — auch ohne Argument
-      #XX  (generische 2-Hex-Byte: [#0A] Menütaste, [#B9] Namensplatz,
-            [#30]/[#3C], [#FA] Steuerbyte)
-      (ohne #: [FCxx]..., [FDxx], Makronamen [player], [buffer1]...)
+    # -Familie (Rohbytefolgen) — DIFFERENZIELLE REGEL gegen den
+    echten Encoder tools/pcs_encode.py (_RAW-Regex [#HH..] +
+    bytes.fromhex, verifiziert 2026-10-28):
+      # + GERADE Hex-Ziffern (>= 2) = gueltig (Rohbyte-Folge, z. B.
+        [#AB] = 1 Byte, [#ABCD] = 2 Bytes, [#FEFD02FC09] = 5 Bytes).
+      # + UNGERADE Hex oder nicht-hex = ungueltig => C3 (Encoder:
+        fromhex wirft ValueError bzw. Regex matcht nicht).
+    Kurzform-/Makro-Familie ohne # (Makro-Tabelle, kein Raw-Hex):
+      [FCxx] / [FCxxxx] / [FCxxxxxx] / [FCxxxxxxxx] (2/4/6/8 Hex)
+      [FDxx], [F7xx] / [F8xx] / [F9xx] (auch ohne Argument),
+      Makronamen [player], [buffer1], ...
     """
-    core = tok[1:] if tok.startswith("#") else tok
+    if tok.startswith("#"):
+        core = tok[1:]
+        return _is_hex(core) and len(core) >= 2 and len(core) % 2 == 0
+    core = tok
     n = _fc_hex_len(core)
     if n is not None:
         return n in FC_HEX_OK
@@ -216,13 +234,13 @@ def _bracket_ok(tok: str) -> bool:
         return len(core) == 4 and _is_hex(core[2:])
     if core[:2] in ("F7", "F8", "F9"):
         return len(core) == 2 or (len(core) == 4 and _is_hex(core[2:]))
-    if tok.startswith("#") and len(core) == 2:
-        return _is_hex(core) and core not in ("FC", "FD")
     return core in MACRO_NAMES
 
 
 def _fc_odd(core: str) -> bool:
-    """True, wenn ein FC-Code die ungewoehnliche 10-Hex-Form hat (C4)."""
+    """True, wenn ein FC-Code die 10-Hex-Form hat (C4 — informativ:
+    syntaktisch gueltige Rohbytefolge, nur semantisch zu pruefen;
+    zaehlt NICHT gegen die Formatgueltigkeit)."""
     return _fc_hex_len(core) == FC_HEX_ODD
 
 
@@ -285,9 +303,12 @@ def check_text(text: str):
         tok = m.group(1)
         core = tok[1:] if tok.startswith("#") else tok
         if _fc_odd(core):
+            # Informativ (keine Formatgueltigkeit): gerade
+            # Rohbytefolge, semantisch zu pruefen.
             findings.append(("fc_odd_shape",
-                             f"[{tok}] ({len(core) - 2} Hex — vermutlich "
-                             f"mehrere FC-Codes in einer Klammer)"))
+                             f"[{tok}] (FC + {len(core) - 2} Hex — "
+                             f"informativ, vermutlich mehrere "
+                             f"FC-Codes in einer Klammer)"))
         elif not _bracket_ok(tok):
             findings.append(("malformed_bracket", f"[{tok}]"))
     return findings
@@ -350,12 +371,18 @@ CALIBRATION_NOTES = (
     "- Escapes: 1-Zeiger `\\n \\l \\p \\e \\d \\r \\. \\< \\> \\+`; "
     "2-Zeiger `\\pk \\Po \\mn \\Ke \\Bl \\Lo \\Ck \\Lv \\qo \\qc "
     "\\sm \\sf \\au \\ad \\ar \\al`",
-    "- Klammer-Codes: `[#FCxx/xxxx/xxxxxx/xxxxxxxx]`, `[#FDxx]`, "
-    "`[#F7xx]/[#F8xx]/[#F9xx]` (auch ohne Argument), generische "
-    "`[#XX]` (genau 2 Hex)",
+    "- Klammer-Codes (differenzielle Encoder-Regel, "
+    "tools/pcs_encode.py, verifiziert 2026-10-28): `#` + GERADE Hex "
+    "(>= 2) = gueltige Rohbytefolge (z. B. `[#0A]`, `[#FA]`, "
+    "`[#FEFD02FC09]`); ungerade Hex oder nicht-hex = "
+    "`malformed_bracket` (C3). Ohne `#`: `[FCxx]…`-Kurzformen "
+    "(2/4/6/8 Hex nach FC), `[FDxx]`, `[F7xx]/[F8xx]/[F9xx]`, "
+    "Makronamen (`[player]`, `[buffer1]`, …)",
     "- Zitate: Paare `(\\qo,\\qc)` und `(\\qo,\\qo)` (\\qo schliesst "
     "Zitate ebenfalls — 16x im Korpus, EN-Original + DE, gueltig)",
-    "- FC in 10-Hex-Form = `fc_odd_shape` (Review), kein Formatfehler",
+    "- C4 (FC + 10 Hex) = `fc_odd_shape` INFORMATIV (syntaktisch "
+    "gueltig, semantisch zu pruefen — zaehlt nicht gegen die "
+    "Formatgueltigkeit)",
     "- B1-Pruefung nur fuer die 21 Zeilen von item_kurzformen.csv "
     "(bekannte Buffer-Limits; Template-Adressen sind ROM-Adressen, "
     "keine Korpus-IDs)",
@@ -428,12 +455,20 @@ def run(korpus_pfad, vorlagen_pfad, out_dir, max_pixels=None):
     pixel_all.sort()
     pct = lambda q: (pixel_all[int(len(pixel_all) * q)]
                      if pixel_all else 0)
+    # Trennung: C1/C2/C3 (+B1/B2 falls aktiv) zaehlen gegen die
+    # Formatgueltigkeit; C4 (fc_odd_shape) ist nur informativ.
+    INFO_CODES = frozenset(("fc_odd_shape",))
+    n_format = sum(len(v) for c, v in by_code.items()
+                   if c not in INFO_CODES)
+    n_info = sum(len(v) for c, v in by_code.items()
+                 if c in INFO_CODES)
     lines = [
         "# Format-/Buffer-Validator: Report",
         "",
         f"- Korpus-Zeilen: {len(rows)}"
         + (f", Vorlagen-Zeilen: {n_vorlagen}" if vorlagen_pfad else ""),
-        f"- Befunde gesamt: {len(findings)}",
+        f"- Befunde gesamt: {len(findings)} "
+        f"(formatrelevant: {n_format}, informativ: {n_info})",
         "",
         "| Code | Anzahl | Bedeutung |",
         "|---|---|---|",
@@ -443,9 +478,13 @@ def run(korpus_pfad, vorlagen_pfad, out_dir, max_pixels=None):
                           "Grammatik (Referenz: BACKSLASH_CODES)",
         "quote_imbalance": "C2: kaputte Zitat-Paarung (\\qc ohne "
                            "Oeffnung / ungeschlossenes Zitat)",
-        "malformed_bracket": "C3: [#..]/[..] Code in ungueltiger Form",
-        "fc_odd_shape": "C4: FC-Code in 10-Hex-Form (vermutet: mehrere "
-                        "FC-Codes in einer Klammer; zur Pruefung)",
+        "malformed_bracket": "C3: [#..]-Rohbytefolge ungueltig "
+                             "(ungerade Hex oder nicht-hex; gerade "
+                             "Hex = gueltig nach Encoder-Regel)",
+        "fc_odd_shape": "C4 (informativ): FC + 10 Hex (vermutet: "
+                        "mehrere FC-Codes in einer Klammer; syntaktisch "
+                        "gueltig, semantisch zu pruefen — zaehlt nicht "
+                        "gegen Formatgueltigkeit)",
         "byte_overflow": "B1: Kurzform > max_bytes (GBA-PCS-Bytes)",
         "pixel_over": "B2: Zeilen-Pixelbreite > Schwelle",
         "pcs_unmapped": "B1: Zeichen auerhalb des PCS-Satzes",
@@ -468,6 +507,39 @@ def run(korpus_pfad, vorlagen_pfad, out_dir, max_pixels=None):
             else "aus (nur Statistik; Limits je Screen/Buffer "
                  "unterscheiden sich)"),
         "",
+        "## Pruef-Abgrenzung (was dieses Tool prueft und was nicht)",
+        "",
+        "- Formatgueltigkeit (C1/C2/C3): alle Korpus-Zeilen, Spalten "
+        "`en` und `de`.",
+        f"- B1 (byte_overflow): nur die {n_vorlagen} Zeilen der "
+        "Vorlagen-Datei (bekannte Buffer-Limits; Template-Adressen "
+        "sind ROM-Adressen, keine Korpus-IDs).",
+        "- B2 (pixel_over): standardmaessig AUS (nur Aggregat-Statistik); "
+        "Screen-Limits unterscheiden sich je Screen/Buffer. Generische "
+        "Rohbytefolgen > 2 Hex werden fuer die Pixelbreite nicht "
+        "byteweise zerlegt (0 px) — Statistik ist fur solche Zeilen eine "
+        "Untergrenze.",
+        "- NICHT geprueft: Laufzeit-Verhalten, echtes Screen-Layout, "
+        "ROM-Tabellen.",
+        "- C4 (fc_odd_shape) ist informativ: syntaktisch gueltige "
+        "Rohbytefolge (gerade Hex nach Encoder-Regel), semantisch zu "
+        "pruefen — zaehlt nicht gegen die Formatgueltigkeit.",
+        "",
+        "## Formatgueltigkeits-Urteil (C1/C2/C3 + B1, innerhalb der "
+        "Pruef-Abgrenzung)",
+        "",
+    ]
+    if n_format == 0:
+        lines.append("- Keine Formatfehler (C1/C2/C3/B1 = 0) innerhalb "
+                     "der Pruef-Abgrenzung.")
+    else:
+        lines.append(f"- Formatrelevante Befunde: {n_format} (siehe "
+                     f"'Befund-Beispiele') — Pruefung erforderlich.")
+    if n_info:
+        lines.append(f"- Informative Befunde (keine Formatfehler): "
+                     f"{n_info} (C4).")
+    lines += [
+        "",
         "## Befund-Beispiele (IDs ohne Textinhalte)",
         "",
     ]
@@ -479,16 +551,14 @@ def run(korpus_pfad, vorlagen_pfad, out_dir, max_pixels=None):
             lines.append(f"- ... ({len(by_code[code]) - 10} weitere in "
                          f"format_check.csv)")
         lines.append("")
-    if not by_code:
-        lines.append("(keine Befunde — Korpus formatgueltig)")
-        lines.append("")
     report_pfad = os.path.join(out_dir, "format_report.md")
     with open(report_pfad, "w", encoding="utf-8", newline="") as fh:
         fh.write("\n".join(lines) + "\n")
     print(f"-> {report_pfad}", file=sys.stderr)
 
     print("=== ZUSAMMENFASSUNG ===", file=sys.stderr)
-    print(f"Zeilen: {len(rows)} | Befunde: {len(findings)}"
+    print(f"Zeilen: {len(rows)} | Befunde: {len(findings)} "
+          f"(formatrelevant: {n_format}, informativ: {n_info})"
           + (f" (B2 aktiv: --max-pixels {max_pixels})"
              if max_pixels is not None else ""), file=sys.stderr)
     return 0

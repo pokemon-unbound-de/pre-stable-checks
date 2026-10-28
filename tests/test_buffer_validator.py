@@ -3,7 +3,9 @@
 public-safe: keine Spieltexte)."""
 
 import os
+import re
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(
@@ -122,29 +124,40 @@ class TestBracketChecks(unittest.TestCase):
             "[player]", "[buffer1]", "[buffer2]", "[buffer3]",
             "[kun]", "[rival]", "[up]", "[down]",
             "[left]", "[right]",
+            # Encoder-Regel: # + GERADE Hex = gültige Rohbytefolge
+            # (differenziell gegen tools/pcs_encode.py verifiziert):
+            "[#AB]", "[#ABCD]", "[#ab12]",    # gerade Hex (auch klein)
+            "[#FC]",                          # Rohbyte 0xFC (2 Hex)
+            "[#FD0102]",                      # 6 Hex
+            "[#F80000]",                      # 6 Hex
+            "[#FC010600000000]",              # 14 Hex
+            "[#FEFD02FC09]",                  # 10 Hex — ehemaliger
+                                              # C3-Falschpositiv (Regressionsfall)
         )
         for t in gueltig:
             self.assertEqual(self.codes(t), [], msg=t)
 
     def test_malformed(self):
+        # # -Familie: UNGERADE Hex oder nicht-hex => C3
+        # (Encoder: bytes.fromhex wirft ValueError bzw. Regex matcht
+        # nicht => nicht encodierbar, tools/pcs_encode.py @ 2026-10-28)
         malformed = (
-            "[#FC013]",          # 3 Hex
-            "[#FC010600000000]",  # 12 Hex
-            "[#FC]",           # 0 Hex
-            "[FC]",
-            "[#FD0102]",       # FD mit 4 Hex
-            "[#FD0]",          # FD mit 1 Hex
-            "[#F80]",          # Präfix mit 1 Hex
-            "[#F80000]",       # Präfix mit 4 Hex
-            "[foo]",           # unbekanntes Makronamen
-            "[#FEFD02FC09]",   # Korpus-Fall: 3 Codes in einer Klammer
-            "[#FC]",           # leerer FC-Teil
+            "[#FC013]",          # 5 Hex (ungerade)
+            "[#FD0]",            # 3 Hex (ungerade)
+            "[#F80]",           # 3 Hex (ungerade)
+            "[#ABC]",           # 3 Hex (ungerade)
+            "[#ABCDE]",         # 5 Hex (ungerade)
+            "[#XYZ]",           # nicht-hex
+            "[#ZK9]",           # nicht-hex
+            "[FC]",             # Kurzform-Familie: FC ohne Argument
+            "[foo]",            # unbekanntes Makronamen
         )
         for t in malformed:
             self.assertEqual(self.codes(t), ["malformed_bracket"], msg=t)
 
     def test_fc_odd_shape(self):
-        # 10-Hex-FC: Review-Befund (C4), kein Formatfehler (C3)
+        # FC + 10 Hex: C4 ist INFORMATIV (syntaktisch gültige
+        # Rohbytefolge, semantisch zu prüfen) — kein C3.
         for t in ("[#FC134BFC0600]", "[FC134BFC0600]", "[#FC1355FC0600]"):
             self.assertEqual(self.codes(t), ["fc_odd_shape"], msg=t)
 
@@ -155,6 +168,71 @@ class TestBracketChecks(unittest.TestCase):
     def test_c1_und_c3_zusammen(self):
         dets = [(c) for c, _ in bv.check_text("a\\Pb[foo]")]
         self.assertEqual(dets, ["unknown_escape", "malformed_bracket"])
+
+
+class TestEncoderDifferential(unittest.TestCase):
+    """C3-Regel DIFFERENZIELL gegen den echten Encoder.
+
+    Referenz: tools/pcs_encode.py (pokemon-unbound-de-web/review),
+    Stand 2026-10-28. Der Encoder behandelt [#HH..] als Rohbytes:
+        _RAW = re.compile(r"\\[#([0-9A-Fa-f]{2,})\\]")
+        bytes.fromhex(rm.group(1))
+    D. h. [#..] wird NUR dann als (gültiger) Code konsumiert, wenn der
+    Inhalt GERADE Hex-Ziffern (>= 2) ist. Ungerade Hex -> fromhex
+    ValueError; nicht-hex -> Regex matcht nicht (Code wird nicht
+    konsumiert). Die C3-Regel des Validators muss genau dazu passen:
+    gerade Hex = gueltig (kein C3), ungerade/nicht-hex = C3.
+    """
+
+    # Exakte Encoder-Referenz (Auszug, identisch zu tools/pcs_encode.py)
+    _RAW = re.compile(r"\[#([0-9A-Fa-f]{2,})\]")
+
+    @classmethod
+    def _encoder_consumes_raw(cls, tok):
+        """True, wenn der Encoder [#tok] als Rohbyte-Code konsumiert."""
+        m = cls._RAW.match("[" + tok + "]")
+        if not m:
+            return False
+        try:
+            bytes.fromhex(m.group(1))
+            return True
+        except ValueError:
+            return False
+
+    # (Form, sollte-C3?) — C3 = nicht encodierbare Rohbytefolge
+    FORMS = (
+        ("#AB", False), ("#ABCD", False), ("#AB1234", False),
+        ("#ab12", False), ("#FEFD02FC09", False),  # Korpus-Fall (Falschpositiv)
+        ("#FC01", False), ("#FC010600000000", False),
+        ("#FD0102", False), ("#F80000", False), ("#F8", False),
+        ("#ABC", True),     # ungerade
+        ("#ABCDE", True),   # ungerade
+        ("#FC013", True),   # ungerade
+        ("#XYZ", True),     # nicht-hex
+        ("#ZK9", True),     # nicht-hex
+    )
+
+    def test_c3_matches_encoder(self):
+        for tok, expect_c3 in self.FORMS:
+            encodable = self._encoder_consumes_raw(tok)
+            # Validator: C3 genau dann, wenn der Encoder die Form nicht
+            # als Rohbyte-Code konsumiert.
+            codes = [c for c, _ in bv.check_text("[" + tok + "]")
+                     if c in ("malformed_bracket", "fc_odd_shape")]
+            has_c3 = "malformed_bracket" in codes
+            self.assertEqual(has_c3, expect_c3,
+                             f"C3-Validator für {tok}")
+            self.assertEqual(encodable, not expect_c3,
+                             f"Encoder-Referenz für {tok}")
+            # Konsistenz: Encoder konsumiert  <=>  kein C3
+            self.assertEqual(encodable, not has_c3,
+                             f"Differenz {tok}")
+
+    def test_fc10_is_c4_not_c3(self):
+        # FC + 10 Hex: Encoder konsumiert (gerade), Validator meldet
+        # nur C4 (informativ), kein C3.
+        codes = [c for c, _ in bv.check_text("[#FC134BFC0600]")]
+        self.assertEqual(codes, ["fc_odd_shape"])
 
 
 class TestLinePixelWidths(unittest.TestCase):
@@ -208,6 +286,46 @@ class TestLinePixelWidths(unittest.TestCase):
 
     def test_ungeschlossene_klammer(self):
         self.assertEqual(bv.line_pixel_widths("a["), [6])
+
+
+class TestReport(unittest.TestCase):
+    """Prüf-Abgrenzung + Urteil im Aggregat-Report (QA-Punkt 2):
+    'N Befunde = formatgültig' darf kein Gesamturteil sein; C4 ist
+    informativ und zählt nicht gegen die Formatgültigkeit."""
+
+    def _korpus(self, td):
+        pfad = os.path.join(td, "korpus.csv")
+        rows = ["id;en;de;kategorie;ort"]
+        # 1x C1 (unbekanntes Escape in DE), 1x C4 (informativ),
+        # 1 gültige gerade Rohbytefolge (kein Befund, Regression).
+        rows.append("K-001;Hi;Hallo \\P[#FEFD02FC09]abc;text;ort1")
+        rows.append("K-002;Ok;[#FC134BFC0600]geht;text;ort2")
+        rows.append("K-003;Clean;[#0A]gut;text;ort3")
+        with open(pfad, "w", encoding="utf-8", newline="") as fh:
+            fh.write("\n".join(rows) + "\n")
+        return pfad
+
+    def test_urteil_und_abgrenzung(self):
+        with tempfile.TemporaryDirectory() as td:
+            korpus = self._korpus(td)
+            out = os.path.join(td, "out")
+            rc = bv.run(korpus, None, out)
+            self.assertEqual(rc, 0)
+            with open(os.path.join(out, "format_report.md"),
+                      encoding="utf-8") as fh:
+                report = fh.read()
+            self.assertIn("Pruef-Abgrenzung", report)
+            self.assertIn("Formatgueltigkeits-Urteil", report)
+            # C1 zählt formatrelevant, C4 nur informativ
+            self.assertIn("(formatrelevant: 1, informativ: 1)", report)
+            self.assertIn("- Formatrelevante Befunde: 1", report)
+            self.assertIn("- Informative Befunde (keine Formatfehler): 1",
+                          report)
+            # gerade Rohbytefolge erzeugt KEIN C3-Befund mehr
+            # (Tabellenzeile + Befund-Beispiele-Heading fehlen; der
+            # Begriff kommt nur in der Regel-Erklärung vor)
+            self.assertNotIn("| malformed_bracket |", report)
+            self.assertNotIn("### malformed_bracket", report)
 
 
 if __name__ == "__main__":

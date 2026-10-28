@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 
 ADDRESS = re.compile(r'^(?:0x)?([0-9a-fA-F]{8})$')
-BP = re.compile(r'^\d+\s+BP\s+[0-9A-Fa-f]{2}\s+\d+\s+\d+\s+([0-9A-Fa-f]{8})\s+[0-9A-Fa-f]{2}\s+[0-9A-Fa-f]+\s*$')
-FATAL = re.compile(r'\b(?:fatal|panic|segmentation fault|assertion failed)\b|Traceback \(most recent call last\)',re.I)
+BP = re.compile(r'^\d+\s+BP\s+[0-9A-Fa-f]{2}\s+\d+\s+\d+\s+([0-9A-Fa-f]{8})\s+\d+\s+[0-9A-Fa-f]+\s*$')
+FATAL = re.compile(r'\b(?:fatal|panic|segmentation fault|assertion failed|illegal opcode|stub software interrupt)\b|Traceback \(most recent call last\)',re.I)
 PNG = b'\x89PNG\r\n\x1a\n'
 
 def validate(m):
@@ -24,7 +24,7 @@ def validate(m):
         raise ValueError('positive screenshot count required')
     return ADDRESS.fullmatch(m['expected_bp']).group(1).upper()
 
-def inspect_run(manifest,rom_sha256,textlog,emulator_log,done,screenshot_count):
+def inspect_run(manifest,rom_sha256,textlog,emulator_log,done,screenshot_count,runner_findings=()):
     target=validate(manifest)
     reasons=[]
     if rom_sha256.lower()!=manifest['rom_sha256'].lower(): reasons.append('rom_hash_mismatch')
@@ -33,6 +33,8 @@ def inspect_run(manifest,rom_sha256,textlog,emulator_log,done,screenshot_count):
     addresses={m.group(1).upper() for line in (textlog or '').splitlines() if (m:=BP.fullmatch(line))}
     if target not in addresses: reasons.append('target_bp_missing')
     if not done: reasons.append('done_missing')
+    if 'ABSTURZ.txt' in runner_findings: reasons.append('runner_crash')
+    if 'FREEZE.txt' in runner_findings: reasons.append('runner_freeze')
     if screenshot_count<manifest['min_screenshots']: reasons.append('screenshots_insufficient')
     if emulator_log is None: reasons.append('emulator_log_missing')
     elif not emulator_log.strip(): reasons.append('emulator_log_empty')
@@ -69,14 +71,16 @@ def main(argv=None):
         m=load_manifest(a.manifest);validate(m)
         if not a.run_dir.is_dir(): raise ValueError('run directory missing')
         count=0
-        folder=a.run_dir/'screenshots'
+        folder=a.run_dir
         if folder.is_dir():
             for path in folder.iterdir():
                 if path.is_file() and path.suffix.lower()=='.png':
                     with path.open('rb') as stream:
                         if stream.read(8)==PNG: count+=1
         result=inspect_run(m,file_hash(a.rom),read_log(a.run_dir/'druckerlog.txt'),
-                           read_log(a.run_dir/'mgba.log'),(a.run_dir/'DONE').is_file(),count)
+                           read_log(a.run_dir/'mgba.log'),(a.run_dir/'DONE').is_file(),count,
+                           runner_findings=[name for name in ('ABSTURZ.txt','FREEZE.txt')
+                                            if (a.run_dir/name).exists()])
     except (ValueError,OSError,TypeError) as error:
         print(json.dumps(dict(coverage='invalid_input',error_type=type(error).__name__)),file=sys.stderr)
         return 1

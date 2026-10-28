@@ -33,18 +33,18 @@ class CoverageTest(unittest.TestCase):
             with self.assertRaises(ValueError): self.run_check(manifest={**self.manifest,field:value})
     def test_cli(self):
         with tempfile.TemporaryDirectory() as tmp:
-            root=Path(tmp);(root/'screenshots').mkdir()
+            root=Path(tmp)
             rom=root/'synthetic.bin';rom.write_bytes(b'synthetic fixture, not a ROM')
             self.manifest['rom_sha256']=hashlib.sha256(rom.read_bytes()).hexdigest()
             manifest=root/'manifest.json';manifest.write_text(json.dumps(self.manifest))
             args=['--manifest',str(manifest),'--rom',str(rom),'--run-dir',str(root)]
             (root/'DONE').touch();(root/'mgba.log').write_text('OK')
-            (root/'screenshots/test.png').write_bytes(PNG+b'fixture')
+            (root/'test.png').write_bytes(PNG+b'fixture')
             for log,code in [(self.kw['textlog'],0),('12 TEXT hello',2)]:
                 (root/'druckerlog.txt').write_text(log)
                 with redirect_stdout(StringIO()) as out: self.assertEqual(main(args),code)
                 self.assertNotIn('hello',out.getvalue())
-            (root/'screenshots/test.png').write_bytes(b'fake png')
+            (root/'test.png').write_bytes(b'fake png')
             (root/'druckerlog.txt').write_text(self.kw['textlog'])
             with redirect_stdout(StringIO()) as out: self.assertEqual(main(args),2)
             self.assertIn('screenshots_insufficient',out.getvalue())
@@ -72,3 +72,52 @@ class CoverageTest(unittest.TestCase):
             path = Path(tmp) / 'manifest.json'
             path.write_text(json.dumps(dict(reversed(list(self.manifest.items())))))
             self.assertEqual(load_manifest(path), self.manifest)
+
+    def test_decimal_width_one_digit(self):
+        self.assertEqual(self.run_check(textlog='12 BP 00 0 0 08001234 8 BBFF')['coverage'], 'green')
+
+    def test_decimal_width_three_digits(self):
+        self.assertEqual(self.run_check(textlog='12 BP 00 0 0 08001234 240 BBFF')['coverage'], 'green')
+
+    def test_illegal_opcode_red(self):
+        self.assertIn('fatal_log', self.run_check(emulator_log='mGBA: Illegal opcode')['reasons'])
+
+    def test_stub_software_interrupt_red(self):
+        self.assertIn('fatal_log', self.run_check(emulator_log='mGBA: Stub software interrupt')['reasons'])
+
+    def test_crash_file_red(self):
+        self.assertIn('runner_crash', self.run_check(runner_findings=['ABSTURZ.txt'])['reasons'])
+
+    def test_freeze_file_red(self):
+        self.assertIn('runner_freeze', self.run_check(runner_findings=['FREEZE.txt'])['reasons'])
+
+    def test_root_pngs_duplicates_and_runner_files_cli(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            rom = root/'synthetic.bin'
+            rom.write_bytes(b'synthetic, not a ROM')
+            m = {**self.manifest, 'rom_sha256':hashlib.sha256(rom.read_bytes()).hexdigest()}
+            manifest = root/'manifest.json'
+            manifest.write_text(json.dumps(m))
+            (root/'DONE').touch()
+            (root/'mgba.log').write_text('Runner started')
+            (root/'druckerlog.txt').write_text('12 BP 00 0 0 08001234 8 BBFF')
+            (root/'_duplikate').mkdir()
+            (root/'_duplikate/old.png').write_bytes(PNG+b'fixture')
+            (root/'screenshots').mkdir()
+            (root/'screenshots/wrong-place.png').write_bytes(PNG+b'fixture')
+            args = ['--manifest',str(manifest),'--rom',str(rom),'--run-dir',str(root)]
+            with redirect_stdout(StringIO()) as out:
+                self.assertEqual(main(args),2)
+            self.assertEqual(json.loads(out.getvalue())['screenshots'],0)
+            for i in range(17):
+                (root/f'{i}.png').write_bytes(PNG+b'fixture')
+            with redirect_stdout(StringIO()) as out:
+                self.assertEqual(main(args),0)
+            self.assertEqual(json.loads(out.getvalue())['screenshots'],17)
+            for name, reason in [('ABSTURZ.txt','runner_crash'),('FREEZE.txt','runner_freeze')]:
+                (root/name).touch()
+                with redirect_stdout(StringIO()) as out:
+                    self.assertEqual(main(args),2)
+                self.assertIn(reason,json.loads(out.getvalue())['reasons'])
+                (root/name).unlink()

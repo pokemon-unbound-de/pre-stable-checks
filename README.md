@@ -95,16 +95,41 @@ Pflichtfehler (die einzigen Stable-Blocker):
 CSV-Format (`stable_fenster.csv`):
 
 ```
-id;datum;typ;status;quelle
-SF-001;2026-10-20;en_rest;gefixt;Beta v0.1.6, Ruhmeshalle
-SF-002;2026-10-28;text_breite;offen;Beta v0.1.7, Kampfturm
+id;datum;fix_datum;typ;status;quelle
+SF-001;2026-10-20;2026-10-21;en_rest;gefixt;Beta v0.1.6, Ruhmeshalle
+SF-002;2026-10-28;;text_breite;offen;Beta v0.1.7, Kampfturm
 ```
 
-- `status`: `offen` (offener Fehler, zahlt gegen das Fenster) |
-  `gefixt` (fixiert — zählt bis zum Datum, danach nicht mehr) |
-  `kein_pflichtfehler` (False Positive, zählt nie)
+- `datum`: Meldedatum (YYYY-MM-DD)
+- `fix_datum`: Fixdatum (YYYY-MM-DD) — **Pflicht bei `gefixt`**,
+  sonst leer. Das 14-Tage-Fenster läuft vom **Fixdatum**, nicht vom
+  Meldedatum; es muss ≥ `datum` sein.
+- `status`:
+  - `offen`: offener Fehler — blockiert das Stable-Kriterium
+    **vollständig** (wird unabhängig von Fenstern niemals grün;
+    erst bei Änderung zu `gefixt` + fix_datum oder
+    `kein_pflichtfehler` relevant)
+  - `gefixt`: fixiert — Fenster läuft ab `fix_datum`
+  - `kein_pflichtfehler`: False Positive, zählt nie
 - `id`: aufsteigend `SF-001`, `SF-002`, … (wird bei `--add`
   automatisch vergeben)
+
+Aussagefähigkeit: Eine fehlende, leere oder nur aus
+`kein_pflichtfehler`-Zeilen bestehende CSV bedeutet **UNBESTAETIGT**
+— es liegen keine Daten vor, die das Kriterium bestätigen. In diesem
+Fall gibt der Tracker **keine Freigabe** (Exit 2).
+
+Exit-Codes (maschinenlesbar):
+
+| Exit | Bedeutung |
+|---|---|
+| `0` | STABLE-KRITERIUM ERFÜLLT |
+| `1` | Input-Fehler (ungültige Zeilen, Schema-Mismatch) |
+| `2` | nicht grün (offener Pflichtfehler / Fenster läuft / Fenster endet heute / UNBESTAETIGT) |
+
+Grenze: Fenster-Ende = letztes `fix_datum` + 14 Tage. Am
+Fenster-Endtag selbst meldet der Tracker „FENSTER ENDET HEUTE“ (Exit
+2, morgen Stable-fähig); grün wird er erst ab dem Folgetag.
 
 ### Nutzung
 
@@ -117,13 +142,19 @@ python3 stable_fenster.py --csv stable_fenster.csv --heute 2026-11-04
 
 # Neue Meldung anhängen (id automatisch)
 python3 stable_fenster.py --csv stable_fenster.csv \
-    --add "2026-11-04;grammatik;offen;Beta v0.1.7, Kampfturm"
+    --add "2026-11-04;;grammatik;offen;Beta v0.1.7, Kampfturm"
+
+# Fix dokumentieren (fix_datum im 2. Feld)
+python3 stable_fenster.py --csv stable_fenster.csv \
+    --add "2026-11-04;2026-11-06;grammatik;gefixt;Beta v0.1.7, Kampfturm"
 ```
 
-Ausgabe: Fenster-Ende (letztes zählendes Datum + 14 Tage), Status
-(„Fenster läuft noch“ / „Stable-Kriterium erfüllt“), Aggregate je
-Fehler-Typ. Ungültige Zeilen (ID/Datum/Typ/Status) werden gemeldet
-und der Exit-Code ist 1.
+`--add` erwartet `datum;fix_datum;typ;status;quelle`.
+
+Ausgabe: Fenster-Ende (letztes fix_datum + 14 Tage), Status,
+Aggregate je Fehler-Typ. Ungültige Zeilen (ID/Datum/fix_datum/Typ/
+Status) werden gemeldet; der Exit-Code ist 1. Alt-Schema-Dateien
+(ohne `fix_datum`) werden abgelehnt und die Migration angezeigt.
 
 ## Tests
 
@@ -131,7 +162,7 @@ Synthetische Fixtures, ohne Spieltexte:
 
 ```bash
 python3 tests/test_buffer_validator.py   # 38 Tests
-python3 tests/test_stable_fenster.py     # 16 Tests
+python3 tests/test_stable_fenster.py     # 39 Tests
 ```
 
 ## Public-Safety

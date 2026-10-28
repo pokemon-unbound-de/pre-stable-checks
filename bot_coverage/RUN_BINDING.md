@@ -56,3 +56,13 @@ nicht selbst die tatsächliche Emulator-Ausführung. Ein nachträglich aus alten
 Dateien erzeugter Beleg ist kein Ersatz für die Start-/Abschluss-Integration.
 Keine automatische Release-Freigabe, kein Live-Deployment. Erst enger privater
 Testdatensatz oder Integration durch Runner-Owner, danach echte Gegenprobe.
+
+## Zuständigkeit bestätigt
+
+Nevio bestätigt im Kommentar 6474894058: I1 übernimmt den Runner-Adapter nach
+seiner Rückkehr; der Vertrag passt konzeptionell. Feldnamen, Zeitpunkte,
+frischer exklusiver Laufordner und Hash der tatsächlich gestarteten eigenen
+ROM-Kopie sind von I1 abzugleichen. Keine direkten Änderungen an bot_run.py
+oder der Live-Pipeline. Ein enger privater Datensatz genügt bei Bedarf.
+Leeres mgba.log trat laut Nevio in 166 vorhandenen abgeschlossenen Läufen
+keinmal auf; die konservative Prüfung bleibt für diesen Runner bestehen.

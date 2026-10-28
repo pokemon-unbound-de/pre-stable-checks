@@ -45,3 +45,20 @@ Abgleich von Lauf-ID, Szenario, gestartetem ROM-Hash und Artefakt-Hashes in
 `run_evidence.json`. Ohne diese Optionen bleibt `binding: unchecked` explizit
 sichtbar. `RUN_BINDING.md` beschreibt die vom Runner zu erfüllenden Bedingungen.
 Das ist ein vorbereiteter Vertrag, keine bereits erfolgte Runner-Integration.
+
+## Dateibasierter Abnahme-Replay
+
+    python3 replay_checks.py
+
+Erzeugt vorübergehend ausschließlich synthetische Dateien (keine Spiel-ROM,
+keine Saves, keine echten Textlogs) und prüft 13 Fälle durch denselben
+CLI-Einstiegspunkt: 1 erfolgreicher gebundener Lauf und 12 Negativfälle,
+einschließlich veralteter Lauf-ID, geändertem Bild, falscher ROM, fehlendem
+Ziel/Abschluss, Root-PNGs vs. Duplikaten und Runner-Absturzmarkern. Die
+PNG-Fixtures sind vollständige generierte 1×1-Bilder. JSON nennt Fall-ID,
+Soll-/Ist-Exitcode und Prüfzeit. Exit 0 nur, wenn jeder Fall einschließlich
+seines erwarteten Grundcodes stimmt. Dateien werden danach entfernt.
+
+Die Laufzeiten umfassen den In-Prozess-CLI-Check und Datei-IO, nicht die
+Fixture-Erstellung, einen Emulator oder neue Prozessstarts. Das ist eine
+Abnahmehilfe, kein Nachweis für Laufzeit oder Abdeckung des echten Spiels.

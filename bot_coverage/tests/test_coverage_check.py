@@ -50,3 +50,25 @@ class CoverageTest(unittest.TestCase):
             self.assertIn('screenshots_insufficient',out.getvalue())
             manifest.write_text('{}')
             with redirect_stderr(StringIO()): self.assertEqual(main(args),1)
+
+    def test_empty_logs_fail_closed(self):
+        for field in ('emulator_log', 'textlog'):
+            for value in ('', ' \n\t'):
+                result = self.run_check(**{field: value})
+                self.assertEqual(result['coverage'], 'red')
+                self.assertIn(field + '_empty', result['reasons'])
+
+    def test_duplicate_manifest_keys_rejected(self):
+        from coverage_check import load_manifest
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'manifest.json'
+            path.write_text('{"expected_bp":"08001234","expected_bp":"08005678"}')
+            with self.assertRaises(ValueError):
+                load_manifest(path)
+
+    def test_manifest_json_order_irrelevant(self):
+        from coverage_check import load_manifest
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / 'manifest.json'
+            path.write_text(json.dumps(dict(reversed(list(self.manifest.items())))))
+            self.assertEqual(load_manifest(path), self.manifest)

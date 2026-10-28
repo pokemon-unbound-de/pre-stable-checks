@@ -29,11 +29,13 @@ def inspect_run(manifest,rom_sha256,textlog,emulator_log,done,screenshot_count):
     reasons=[]
     if rom_sha256.lower()!=manifest['rom_sha256'].lower(): reasons.append('rom_hash_mismatch')
     if textlog is None: reasons.append('textlog_missing')
+    elif not textlog.strip(): reasons.append('textlog_empty')
     addresses={m.group(1).upper() for line in (textlog or '').splitlines() if (m:=BP.fullmatch(line))}
     if target not in addresses: reasons.append('target_bp_missing')
     if not done: reasons.append('done_missing')
     if screenshot_count<manifest['min_screenshots']: reasons.append('screenshots_insufficient')
     if emulator_log is None: reasons.append('emulator_log_missing')
+    elif not emulator_log.strip(): reasons.append('emulator_log_empty')
     if any(FATAL.search(log or '') for log in (emulator_log,textlog)): reasons.append('fatal_log')
     return dict(schema=1,scenario=manifest['scenario'],coverage='red' if reasons else 'green',
                 reasons=reasons,screenshots=screenshot_count,release_authorization=False)
@@ -47,6 +49,16 @@ def file_hash(path):
 def read_log(path):
     return path.read_text(encoding='utf-8',errors='strict') if path.is_file() else None
 
+def load_manifest(path):
+    def unique(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError('duplicate manifest key')
+            result[key] = value
+        return result
+    return json.loads(path.read_text(encoding='utf-8'), object_pairs_hook=unique)
+
 def main(argv=None):
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--manifest',required=True,type=Path)
@@ -54,7 +66,7 @@ def main(argv=None):
     p.add_argument('--run-dir',required=True,type=Path)
     a=p.parse_args(argv)
     try:
-        m=json.loads(a.manifest.read_text(encoding='utf-8'));validate(m)
+        m=load_manifest(a.manifest);validate(m)
         if not a.run_dir.is_dir(): raise ValueError('run directory missing')
         count=0
         folder=a.run_dir/'screenshots'

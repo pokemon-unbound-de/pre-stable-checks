@@ -14,7 +14,7 @@ Laufordner: `druckerlog.txt`, `mgba.log`, Markerdatei `DONE`, `screenshots/*.png
 
 Nevios synthetische Zeile `12 BP 00 0 0 08001234 30 BBFF` wird strikt geparst; sechste Spalte = erwartete BP-Adresse. Eine Adresse im gewöhnlichen Text oder Nutzdatenfeld zählt nicht. Abweichende echte Logvarianten bleiben rot, bis sie belegt und getestet sind.
 
-Grün erfordert passenden ROM-SHA-256, Ziel-BP, DONE, Screenshot-Mindestzahl und beide Logs ohne erkannten Fatal-Marker. Muster: fatal, panic, segmentation fault, assertion failed, Python-Traceback-Kopf. Konservative Pilotregel; echte Marker und harmlose Erwähnungen müssen kalibriert werden.
+Grün erfordert passenden ROM-SHA-256, Ziel-BP, DONE, Screenshot-Mindestzahl und beide nichtleeren Logs ohne erkannten Fatal-Marker. Muster: fatal, panic, segmentation fault, assertion failed, Python-Traceback-Kopf. Konservative Pilotregel; echte Marker und harmlose Erwähnungen müssen kalibriert werden.
 
     python3 coverage_check.py --manifest /privat/szenario.json --rom /privat/build.gba --run-dir /privat/frischer-lauf
 
@@ -29,4 +29,6 @@ Jedes Szenario benötigt einen frischen getrennten Laufordner. Der Checker allei
     python3 -m unittest discover -s tests -v
     python3 benchmark_coverage.py
 
-8 Coverage-Tests mit mehreren Randfällen plus 9 vorhandene Report-Tests. Der Benchmark nutzt 1 gültigen und 5 ungültige synthetische Läufe. Die vereinfachte Regel „Text vorhanden“ illustriert nur den beschriebenen Fehler; sie ist nicht Nevios tatsächlicher Gate-Code. Vorher/Nachher am echten Runner bleibt offen.
+11 Coverage-Tests mit mehreren Randfällen plus 9 vorhandene Report-Tests. Der Benchmark nutzt 1 gültigen und 5 ungültige synthetische Läufe. Die vereinfachte Regel „Text vorhanden“ illustriert nur den beschriebenen Fehler; sie ist nicht Nevios tatsächlicher Gate-Code. Vorher/Nachher am echten Runner bleibt offen.
+
+Nachgehärtet: leere/Whitespace-Logs sind rot; doppelte JSON-Manifest-Schlüssel werden als Eingabefehler abgelehnt, statt still einen Wert zu überschreiben.

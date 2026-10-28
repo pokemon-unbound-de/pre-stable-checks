@@ -37,3 +37,11 @@ Anpassung nach Nevios echter Gegenprobe (Kommentar 6474525076): Root-PNGs,
 keine Unterordner-Duplikate, dezimale Fensterbreiten, beide mGBA-Absturzmarker
 und Runner-Befunddateien. Die erneute Gegenprobe am vorhandenen echten Lauf
 muss projektseitig erfolgen, da diese Laufartefakte hier nicht verfügbar sind.
+
+## Optionaler nächster Schritt
+
+`--require-binding --run-id <aktuelle-runner-id>` aktiviert den vorgeschlagenen
+Abgleich von Lauf-ID, Szenario, gestartetem ROM-Hash und Artefakt-Hashes in
+`run_evidence.json`. Ohne diese Optionen bleibt `binding: unchecked` explizit
+sichtbar. `RUN_BINDING.md` beschreibt die vom Runner zu erfüllenden Bedingungen.
+Das ist ein vorbereiteter Vertrag, keine bereits erfolgte Runner-Integration.

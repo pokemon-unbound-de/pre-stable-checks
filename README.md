@@ -1,0 +1,141 @@
+# pre-stable-checks
+
+Tools fuer den Stable-Uebergang der Pokémon-Unbound-DE-Übersetzung
+(Pre-Stable → Stable). Zwei unabhängige Python-Tools, **nur
+Python-Standardbibliothek**, deterministisch, ohne Netzwerkzugriff:
+
+| Tool | Datei | Zweck |
+|---|---|---|
+| Format-/Buffer-Validator | [`buffer_validator.py`](buffer_validator.py) | Prüft, dass Spieltexte **formatgültig** sind und in bekannte Buffer-Limits passen (Steuer-/Farb-/Puffer-Codes, GBA-PCS-Byte-Limits, Pixelbreite) |
+| Stable-Fenster-Tracker | [`stable_fenster.py`](stable_fenster.py) | Misst das Stable-Kriterium „14 Tage ohne Pflichtfehler“ als reproduzierbare Zahl statt Bauchgefühl |
+
+Beide Tools **ändern nichts** — sie erzeugen nur Befunde, die sich
+reproduzieren lassen.
+
+---
+
+## Format-/Buffer-Validator
+
+Prüft pro Zeile die Spalten `en` und `de` eines Korpus-CSVs
+(`;`-getrennt, Spalten `id;en;de;kategorie;ort`):
+
+| Code | Prüfung |
+|---|---|
+| `unknown_escape` (C1) | Backslash-Folge, die nicht in der Escape-Grammatik des Spiels ist (Referenz: `BACKSLASH_CODES` in `lib/pcs_text.py`) |
+| `quote_imbalance` (C2) | Kaputte Zitat-Paarung: `\qc` ohne Oeffnung oder ungeschlossenes Zitat. Gültige Paare: `(\qo,\qc)` und `(\qo,\qo)` |
+| `malformed_bracket` (C3) | `[#..]` / `[..]`-Code in ungültiger Form |
+| `fc_odd_shape` (C4) | FC-Code in 10-Hex-Form (vermutet: mehrere FC-Codes in einer Klammer; Byte-Stream korrekt → Review statt Fehler) |
+| `byte_overflow` (B1) | Vorlagen-Zeile: `de_kurz_vorschlag` > `max_bytes` (GBA-PCS-Bytes, 1 Byte/Zeichen) |
+| `pixel_over` (B2) | Zeilen-Pixelbreite > `--max-pixels` (nur mit Flag; Default: nur Aggregat-Statistik, da Bildschirm-Limits je Screen/Buffer unterschiedlich sind) |
+
+### Nutzung
+
+```bash
+python3 buffer_validator.py \
+    --korpus texte_v0.1.7.2.csv \
+    --vorlagen item_kurzformen.csv \
+    --out-dir format/ \
+    [--max-pixels 200]
+```
+
+Ergebnis: `format/format_check.csv` (Befunde: ID + Code + Detail,
+ohne Textinhalte) und `format/format_report.md` (Aggregat-Report).
+
+### Kalibrierung
+
+Am Korpus **v0.1.7.2** (17.188 Zeilen) kalibriert — das Spiel läuft
+fehlerfrei, daher gilt: was im Korpus und im EN-Original vorkommt,
+ist gültig. Ergebnis am Kalibrierungs-Korpus: **6 Befunde**
+(1× C3, 4× C4, 1× C1), d. h. das Korpus ist formatgültig.
+
+Gültige Formen (Auszug; Details im Modul-Docstring):
+
+- **Escapes:** 1-Zeiger `\n \l \p \e \d \r \. \< \> \+`;
+  2-Zeiger `\pk \Po \mn \Ke \Bl \Lo \Ck \Lv \qo \qc \sm \sf \au \ad \ar \al`
+  (Grammatik = `BACKSLASH_CODES`/`CONTROL_TOKEN_RE` der Referenz,
+  inkl. Lookahead-Regeln `pk(?![A-Za-z])` / `Po(?![A-Za-z])`)
+- **Klammer-Codes:** `[#FCxx/xxxx/xxxxxx/xxxxxxxx]` (2/4/6/8 Hex),
+  `[#FDxx]`, `[#F7xx]/[#F8xx]/[#F9xx]` (auch ohne Argument),
+  generische `[#XX]` (genau 2 Hex, z. B. `[#0A]` Menütaste,
+  `[#B9]` Namensplatz, `[#FA]` Steuerbyte), ohne `#`: `[FCxx]…`,
+  `[FDxx]`, Makronamen `[player]`, `[buffer1]` …
+- **Zitate:** `\qo` schließt Zitate ebenfalls (`\qo…\qo` kommt 16×
+  im Korpus vor, u. a. im EN-Original — gültig)
+- **B1-Prüfung** nur für die 21 Zeilen von `item_kurzformen.csv`
+  (bekannte Buffer-Limits; die Template-Adressen dort sind
+  ROM-Skript-Adressen, keine Korpus-IDs)
+
+Bewusst **keine** strikte FC-Argument-Prüfung: Der Korpus nutzt
+`[FC01]`-Kurzformen (5.000+ Zeilen), die der Spiel-Laufzeit
+einwandfrei verarbeitet — eine Semantik-Prüfung würde massenhaft
+Fehlalarme liefern.
+
+### Herkunft der Metriken
+
+- GBA-PCS-Zeichentabelle, Glyph-Breiten
+  (`sFontNormalLatinGlyphWidths`), `text_pixel_width`-Semantik
+  (0xFC+Args = 0 px, 0xFD = +54 px, 0xFA/FB/FE = 0 px) und die
+  Escape-Grammatik: portiert aus
+  [Simopich/unbound-translator](https://github.com/Simopich/unbound-translator)
+  (MIT), Stand main @ 2026-10-28; der Port wurde **byte-identisch
+  gegen die Referenz verifiziert**.
+- `sFontNormalLatinGlyphWidths` stammt ursprünglich aus
+  pret/pokefirered (`src/text.c`).
+
+## Stable-Fenster-Tracker
+
+**Stable v1.0.0 gilt, wenn 14 Tage lang kein Pflichtfehler gemeldet
+wurde.** Der Tracker hält das Fenster in einer manuell gepflegten
+CSV (ein Eintrag pro Pflichtfehler-Meldung aus `#beta-bugs`) und
+rechnet Fenster-Ende und Status aus — ohne Discord-API.
+
+Pflichtfehler (die einzigen Stable-Blocker):
+`en_rest`, `text_breite`, `grammatik`, `grafik`, `absturz`.
+
+CSV-Format (`stable_fenster.csv`):
+
+```
+id;datum;typ;status;quelle
+SF-001;2026-10-20;en_rest;gefixt;Beta v0.1.6, Ruhmeshalle
+SF-002;2026-10-28;text_breite;offen;Beta v0.1.7, Kampfturm
+```
+
+- `status`: `offen` (offener Fehler, zahlt gegen das Fenster) |
+  `gefixt` (fixiert — zählt bis zum Datum, danach nicht mehr) |
+  `kein_pflichtfehler` (False Positive, zählt nie)
+- `id`: aufsteigend `SF-001`, `SF-002`, … (wird bei `--add`
+  automatisch vergeben)
+
+### Nutzung
+
+```bash
+# Fenster prüfen (Default: heutiges Datum)
+python3 stable_fenster.py --csv stable_fenster.csv
+
+# Referenz-Datum (z. B. für Reproduktion)
+python3 stable_fenster.py --csv stable_fenster.csv --heute 2026-11-04
+
+# Neue Meldung anhängen (id automatisch)
+python3 stable_fenster.py --csv stable_fenster.csv \
+    --add "2026-11-04;grammatik;offen;Beta v0.1.7, Kampfturm"
+```
+
+Ausgabe: Fenster-Ende (letztes zählendes Datum + 14 Tage), Status
+(„Fenster läuft noch“ / „Stable-Kriterium erfüllt“), Aggregate je
+Fehler-Typ. Ungültige Zeilen (ID/Datum/Typ/Status) werden gemeldet
+und der Exit-Code ist 1.
+
+## Tests
+
+Synthetische Fixtures, ohne Spieltexte:
+
+```bash
+python3 tests/test_buffer_validator.py   # 38 Tests
+python3 tests/test_stable_fenster.py     # 16 Tests
+```
+
+## Public-Safety
+
+Keine Spieltexte im Code oder in den Test-Fixtures. Korpus und
+Vorlagen werden per Pfad übergeben; die Befund-Dateien enthalten
+nur IDs, Codes und kurze Code-Formen — keine Textinhalte.

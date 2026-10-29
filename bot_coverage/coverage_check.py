@@ -6,11 +6,11 @@ import re
 import sys
 from pathlib import Path
 from run_binding import inspect_binding
+from png_evidence import PNG, png_structure_ok
 
 ADDRESS = re.compile(r'^(?:0x)?([0-9a-fA-F]{8})$')
 BP = re.compile(r'^\d+\s+BP\s+[0-9A-Fa-f]{2}\s+\d+\s+\d+\s+([0-9A-Fa-f]{8})\s+\d+\s+[0-9A-Fa-f]+\s*$')
 FATAL = re.compile(r'\b(?:fatal|panic|segmentation fault|assertion failed|illegal opcode|stub software interrupt)\b|Traceback \(most recent call last\)',re.I)
-PNG = b'\x89PNG\r\n\x1a\n'
 
 def validate(m):
     if not isinstance(m,dict) or type(m.get('schema')) is not int or m['schema']!=1:
@@ -25,7 +25,7 @@ def validate(m):
         raise ValueError('positive screenshot count required')
     return ADDRESS.fullmatch(m['expected_bp']).group(1).upper()
 
-def inspect_run(manifest,rom_sha256,textlog,emulator_log,done,screenshot_count,runner_findings=()):
+def inspect_run(manifest,rom_sha256,textlog,emulator_log,done,screenshot_count,runner_findings=(),invalid_screenshot_count=0):
     target=validate(manifest)
     reasons=[]
     if rom_sha256.lower()!=manifest['rom_sha256'].lower(): reasons.append('rom_hash_mismatch')
@@ -37,11 +37,12 @@ def inspect_run(manifest,rom_sha256,textlog,emulator_log,done,screenshot_count,r
     if 'ABSTURZ.txt' in runner_findings: reasons.append('runner_crash')
     if 'FREEZE.txt' in runner_findings: reasons.append('runner_freeze')
     if screenshot_count<manifest['min_screenshots']: reasons.append('screenshots_insufficient')
+    if invalid_screenshot_count: reasons.append('screenshots_invalid')
     if emulator_log is None: reasons.append('emulator_log_missing')
     elif not emulator_log.strip(): reasons.append('emulator_log_empty')
     if any(FATAL.search(log or '') for log in (emulator_log,textlog)): reasons.append('fatal_log')
     return dict(schema=1,scenario=manifest['scenario'],coverage='red' if reasons else 'green',
-                reasons=reasons,screenshots=screenshot_count,release_authorization=False)
+                reasons=reasons,screenshots=screenshot_count,invalid_screenshots=invalid_screenshot_count,release_authorization=False)
 
 def file_hash(path):
     digest=hashlib.sha256()
@@ -76,20 +77,22 @@ def main(argv=None):
         if bool(a.require_binding) != bool(a.run_id):
             raise ValueError('--require-binding and --run-id must be used together')
         count=0
+        invalid_count=0
         artifacts = []
         folder=a.run_dir
         if folder.is_dir():
             for path in folder.iterdir():
                 if path.is_file() and path.suffix.lower()=='.png':
-                    with path.open('rb') as stream:
-                        if stream.read(8)==PNG:
-                            count+=1
-                            artifacts.append(path)
+                    artifacts.append(path)  # Binding includes invalid files as actually present.
+                    if png_structure_ok(path):
+                        count+=1
+                    else:
+                        invalid_count+=1
         rom_sha256 = file_hash(a.rom)
         result=inspect_run(m,rom_sha256,read_log(a.run_dir/'druckerlog.txt'),
                            read_log(a.run_dir/'mgba.log'),(a.run_dir/'DONE').is_file(),count,
                            runner_findings=[name for name in ('ABSTURZ.txt','FREEZE.txt')
-                                            if (a.run_dir/name).exists()])
+                                            if (a.run_dir/name).exists()],invalid_screenshot_count=invalid_count)
         result['binding'] = 'unchecked'
         if a.require_binding:
             receipt_path = a.run_dir/'run_evidence.json'

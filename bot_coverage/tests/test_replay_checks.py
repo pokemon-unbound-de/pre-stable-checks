@@ -5,9 +5,12 @@ from replay_checks import run, png
 class ReplayTest(unittest.TestCase):
     def test_file_replay_matrix(self):
         result=run()
-        self.assertEqual(result['cases'],13)
-        self.assertEqual(result['passed'],13)
+        self.assertEqual(result['cases'],14)
+        self.assertEqual(result['passed'],14)
         self.assertEqual(result['false_green'],0)
+        truncated=next(r for r in result['results'] if r['case']=='truncated_png_bound')
+        self.assertEqual(truncated['binding'],'matched')
+        self.assertEqual(truncated['invalid_screenshots'],17)
         self.assertFalse(result['emulator_executed'])
         self.assertFalse(result['real_runner_integration'])
 

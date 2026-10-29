@@ -1,3 +1,4 @@
+from replay_checks import png
 import copy
 import hashlib
 import json
@@ -57,7 +58,7 @@ class BindingTest(unittest.TestCase):
             (root/'druckerlog.txt').write_text('12 BP 00 0 0 08001234 8 BBFF')
             (root/'mgba.log').write_text('OK')
             (root/'DONE').touch()
-            (root/'1.png').write_bytes(PNG+b'fixture')
+            (root/'1.png').write_bytes(png())
             receipt=dict(schema=1,run_id='fresh-123',scenario='menu',launched_rom_sha256=digest(rom),
                          artifacts={name:digest(root/name) for name in ('druckerlog.txt','mgba.log','DONE','1.png')})
             args=['--manifest',str(root/'manifest.json'),'--rom',str(rom),'--run-dir',str(root),'--require-binding','--run-id','fresh-123']
@@ -71,7 +72,7 @@ class BindingTest(unittest.TestCase):
             with redirect_stdout(StringIO()) as out:
                 self.assertEqual(main(args[:-1]+['fresh-456']),2)
             self.assertIn('binding_run_id_mismatch',out.getvalue())
-            (root/'1.png').write_bytes(PNG+b'changed')
+            (root/'1.png').write_bytes(png()+b'changed')
             with redirect_stdout(StringIO()) as out:
                 self.assertEqual(main(args),2)
             self.assertIn('binding_artifact_hash_mismatch',out.getvalue())

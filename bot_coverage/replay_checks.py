@@ -51,6 +51,11 @@ def mutate(root, name):
         for path in root.glob('*.png'): path.unlink()
     elif name=='changed_image':
         (root/'0000.png').write_bytes(png()+b'changed synthetic content')
+    elif name=='truncated_png_bound':
+        for path in root.glob('*.png'):path.write_bytes(b'\x89PNG\r\n\x1a\n')
+        receipt=json.loads((root/'run_evidence.json').read_text())
+        receipt['artifacts']={name:sha(root/name) for name in receipt['artifacts']}
+        (root/'run_evidence.json').write_text(json.dumps(receipt))
     elif name=='receipt_missing':
         (root/'run_evidence.json').unlink()
     elif name=='old_run':
@@ -68,6 +73,7 @@ CASES=[('valid_bound',0,None),('text_without_target',2,'target_bp_missing'),
        ('wrong_rom',2,'rom_hash_mismatch'),('done_missing',2,'done_missing'),
        ('only_duplicate_images',2,'screenshots_insufficient'),
        ('changed_image',2,'binding_artifact_hash_mismatch'),
+       ('truncated_png_bound',2,'screenshots_invalid'),
        ('receipt_missing',2,'binding_missing'),('old_run',2,'binding_run_id_mismatch'),
        ('illegal_opcode',2,'fatal_log'),('stub_interrupt',2,'fatal_log'),
        ('empty_log',2,'emulator_log_empty'),('crash_marker',2,'runner_crash'),
@@ -90,7 +96,9 @@ def run():
             report=json.loads(out.getvalue())
             matched=code==expected and (reason is None or reason in report['reasons'])
             results.append(dict(case=name,expected_exit=expected,actual_exit=code,
-                                matched=matched,check_ms=round(elapsed*1000,3)))
+                                matched=matched,binding=report['binding'],
+                                coverage=report['coverage'],invalid_screenshots=report['invalid_screenshots'],
+                                check_ms=round(elapsed*1000,3)))
     return dict(synthetic=True,emulator_executed=False,real_runner_integration=False,
                 cases=len(results),passed=sum(r['matched'] for r in results),
                 false_green=sum(r['expected_exit']==2 and r['actual_exit']==0 for r in results),results=results)

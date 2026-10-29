@@ -1,3 +1,4 @@
+from replay_checks import png
 import hashlib,json,tempfile,unittest
 from pathlib import Path
 from contextlib import redirect_stdout,redirect_stderr
@@ -39,7 +40,7 @@ class CoverageTest(unittest.TestCase):
             manifest=root/'manifest.json';manifest.write_text(json.dumps(self.manifest))
             args=['--manifest',str(manifest),'--rom',str(rom),'--run-dir',str(root)]
             (root/'DONE').touch();(root/'mgba.log').write_text('OK')
-            (root/'test.png').write_bytes(PNG+b'fixture')
+            (root/'test.png').write_bytes(png())
             for log,code in [(self.kw['textlog'],0),('12 TEXT hello',2)]:
                 (root/'druckerlog.txt').write_text(log)
                 with redirect_stdout(StringIO()) as out: self.assertEqual(main(args),code)
@@ -103,15 +104,15 @@ class CoverageTest(unittest.TestCase):
             (root/'mgba.log').write_text('Runner started')
             (root/'druckerlog.txt').write_text('12 BP 00 0 0 08001234 8 BBFF')
             (root/'_duplikate').mkdir()
-            (root/'_duplikate/old.png').write_bytes(PNG+b'fixture')
+            (root/'_duplikate/old.png').write_bytes(png())
             (root/'screenshots').mkdir()
-            (root/'screenshots/wrong-place.png').write_bytes(PNG+b'fixture')
+            (root/'screenshots/wrong-place.png').write_bytes(png())
             args = ['--manifest',str(manifest),'--rom',str(rom),'--run-dir',str(root)]
             with redirect_stdout(StringIO()) as out:
                 self.assertEqual(main(args),2)
             self.assertEqual(json.loads(out.getvalue())['screenshots'],0)
             for i in range(17):
-                (root/f'{i}.png').write_bytes(PNG+b'fixture')
+                (root/f'{i}.png').write_bytes(png())
             with redirect_stdout(StringIO()) as out:
                 self.assertEqual(main(args),0)
             self.assertEqual(json.loads(out.getvalue())['screenshots'],17)

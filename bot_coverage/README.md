@@ -10,11 +10,11 @@ Privates Manifest bei echten Werten:
 {"schema":1,"scenario":"synthetic-menu","rom_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected_bp":"08001234","min_screenshots":1}
 ```
 
-Laufordner: `druckerlog.txt`, `mgba.log`, Markerdatei `DONE`, `*.png` direkt im Laufordner, wie von Nevio am echten Runner bestätigt. Es wird nicht rekursiv gesucht; `_duplikate/` und andere Unterordner werden nicht gezählt. Gezählt werden PNG-Signaturen; Bildinhalt und Dekodierbarkeit werden nicht geprüft.
+Laufordner: `druckerlog.txt`, `mgba.log`, Markerdatei `DONE`, `*.png` direkt im Laufordner, wie von Nevio am echten Runner bestätigt. Es wird nicht rekursiv gesucht; `_duplikate/` und andere Unterordner werden nicht gezählt. Gezählt werden Dateien mit bestandener PNG-Kernstruktur-/CRC-Prüfung; ungültige Root-PNGs führen zu `screenshots_invalid` und Rot, auch wenn genügend andere Bilder vorhanden sind. `screenshots` nennt die bestandenen Dateien, `invalid_screenshots` die abgelehnten. Bildinhalt und vollständige Dekodierbarkeit werden nicht geprüft; Details in `PNG_EVIDENCE.md`.
 
 Nevios synthetische Zeile `12 BP 00 0 0 08001234 30 BBFF` wird strikt geparst; sechste Spalte = erwartete BP-Adresse. Eine Adresse im gewöhnlichen Text oder Nutzdatenfeld zählt nicht. Die Fensterbreite ist eine Dezimalzahl (`%d`), einschließlich einstelliger Werte wie 8. Abweichende weitere Logvarianten bleiben rot, bis sie belegt und getestet sind.
 
-Grün erfordert passenden ROM-SHA-256, Ziel-BP, DONE, Screenshot-Mindestzahl und beide nichtleeren Logs ohne erkannten Fatal-Marker. Muster: fatal, panic, segmentation fault, assertion failed, Python-Traceback-Kopf, `Illegal opcode`, `Stub software interrupt`. Vorhandene Runner-Befunde `ABSTURZ.txt` oder `FREEZE.txt` führen ebenfalls zu rot, auch bei leerem Dateiinhalt. Konservative Pilotregel; echte Marker und harmlose Erwähnungen müssen kalibriert werden.
+Grün erfordert passenden ROM-SHA-256, Ziel-BP, DONE, Screenshot-Mindestzahl, keine strukturell ungültigen Root-PNGs und beide nichtleeren Logs ohne erkannten Fatal-Marker. Muster: fatal, panic, segmentation fault, assertion failed, Python-Traceback-Kopf, `Illegal opcode`, `Stub software interrupt`. Vorhandene Runner-Befunde `ABSTURZ.txt` oder `FREEZE.txt` führen ebenfalls zu rot, auch bei leerem Dateiinhalt. Konservative Pilotregel; echte Marker und harmlose Erwähnungen müssen kalibriert werden.
 
     python3 coverage_check.py --manifest /privat/szenario.json --rom /privat/build.gba --run-dir /privat/frischer-lauf
 
@@ -29,7 +29,7 @@ Jedes Szenario benötigt einen frischen getrennten Laufordner. Der Checker allei
     python3 -m unittest discover -s tests -v
     python3 benchmark_coverage.py
 
-18 Coverage-Tests mit mehreren Randfällen plus 9 vorhandene Report-Tests. Der Benchmark nutzt 1 gültigen und 5 ungültige synthetische Läufe. Die vereinfachte Regel „Text vorhanden“ illustriert nur den beschriebenen Fehler; sie ist nicht Nevios tatsächlicher Gate-Code. Vorher/Nachher am echten Runner bleibt offen.
+39 Tool-Tests (18 Coverage, 8 Binding, 2 Replay, 11 PNG-Struktur), ausschließlich im isolierten Pilot. Die frühere lokale Report-Prototyp-Suite gehört nicht zu diesem PR. Der Benchmark nutzt 1 gültigen und 5 ungültige synthetische Läufe. Die vereinfachte Regel „Text vorhanden“ illustriert nur den beschriebenen Fehler; sie ist nicht Nevios tatsächlicher Gate-Code. Vorher/Nachher am echten Runner bleibt offen.
 
 Nachgehärtet: leere/Whitespace-Logs sind rot; doppelte JSON-Manifest-Schlüssel werden als Eingabefehler abgelehnt, statt still einen Wert zu überschreiben.
 
@@ -51,10 +51,10 @@ Das ist ein vorbereiteter Vertrag, keine bereits erfolgte Runner-Integration.
     python3 replay_checks.py
 
 Erzeugt vorübergehend ausschließlich synthetische Dateien (keine Spiel-ROM,
-keine Saves, keine echten Textlogs) und prüft 13 Fälle durch denselben
-CLI-Einstiegspunkt: 1 erfolgreicher gebundener Lauf und 12 Negativfälle,
+keine Saves, keine echten Textlogs) und prüft 14 Fälle durch denselben
+CLI-Einstiegspunkt: 1 erfolgreicher gebundener Lauf und 13 Negativfälle,
 einschließlich veralteter Lauf-ID, geändertem Bild, falscher ROM, fehlendem
-Ziel/Abschluss, Root-PNGs vs. Duplikaten und Runner-Absturzmarkern. Die
+Ziel/Abschluss, Root-PNGs vs. Duplikaten und Runner-Absturzmarkern. Ein zusätzlicher Fall enthält17 auf den Dateikopf abgeschnittene Bilder mit neu berechneten, passenden Beleg-Hashes: Binding bleibt matched, Coverage wird trotzdem rot. Die übrigen
 PNG-Fixtures sind vollständige generierte 1×1-Bilder. JSON nennt Fall-ID,
 Soll-/Ist-Exitcode und Prüfzeit. Exit 0 nur, wenn jeder Fall einschließlich
 seines erwarteten Grundcodes stimmt. Dateien werden danach entfernt.

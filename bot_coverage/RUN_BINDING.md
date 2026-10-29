@@ -14,7 +14,8 @@ verfügbar und meldet `binding: unchecked`.
    kein Beweis dafür. Mutationen zwischen Hash und Laden runnerseitig vermeiden.
 3. Nach Prozessende Ergebnisse sammeln und `run_evidence.json` atomar schreiben.
    Der Beleg enthält Lauf-ID, Szenario, Hash der gestarteten ROM sowie SHA-256
-   von Textlog, mGBA-Log, DONE, gezählten Root-PNGs und vorhandenen
+   von Textlog, mGBA-Log, DONE, allen vorhandenen Root-PNG-Dateien (auch
+   strukturell abgelehnten) und vorhandenen
    ABSTURZ.txt/FREEZE.txt. `_duplikate/` und andere Unterordner ignorieren.
 4. Checker mit aktueller erwarteter Lauf-ID aufrufen und Exitcode prüfen.
    Keine Vermischung paralleler Szenarien. Runner-Exitcode und bestehende
@@ -66,3 +67,12 @@ ROM-Kopie sind von I1 abzugleichen. Keine direkten Änderungen an bot_run.py
 oder der Live-Pipeline. Ein enger privater Datensatz genügt bei Bedarf.
 Leeres mgba.log trat laut Nevio in 166 vorhandenen abgeschlossenen Läufen
 keinmal auf; die konservative Prüfung bleibt für diesen Runner bestehen.
+
+## Dateikonsistenz ist getrennt von PNG-Struktur
+
+Eine beschädigte Bilddatei kann einen passenden SHA-256 im Beleg haben.
+Darum umfasst das Artefakt-Set auch ungültige Root-PNG-Dateien; deren Bytes
+werden unverändert gehasht. Die separate Struktur-/CRC-Prüfung kann gleichzeitig
+`screenshots_invalid` melden. `binding: matched` macht diese Dateibefunde
+nicht grün. Keine Aussage zu Bildinhalt, vollständiger Dekodierbarkeit oder
+einer tatsächlichen Emulator-Ausführung daraus ableiten.

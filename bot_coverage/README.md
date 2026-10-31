@@ -12,9 +12,30 @@ Privates Manifest bei echten Werten:
 
 Laufordner: `druckerlog.txt`, `mgba.log`, Markerdatei `DONE`, `*.png` direkt im Laufordner, wie von Nevio am echten Runner bestätigt. Es wird nicht rekursiv gesucht; `_duplikate/` und andere Unterordner werden nicht gezählt. Gezählt werden Dateien mit bestandener PNG-Kernstruktur-/CRC-Prüfung; ungültige Root-PNGs führen zu `screenshots_invalid` und Rot, auch wenn genügend andere Bilder vorhanden sind. `screenshots` nennt die bestandenen Dateien, `invalid_screenshots` die abgelehnten. Bildinhalt und vollständige Dekodierbarkeit werden nicht geprüft; Details in `PNG_EVIDENCE.md`.
 
-Nevios synthetische Zeile `12 BP 00 0 0 08001234 30 BBFF` wird strikt geparst; sechste Spalte = erwartete BP-Adresse. Eine Adresse im gewöhnlichen Text oder Nutzdatenfeld zählt nicht. Die Fensterbreite ist eine Dezimalzahl (`%d`), einschließlich einstelliger Werte wie 8. Abweichende weitere Logvarianten bleiben rot, bis sie belegt und getestet sind.
+Nevios synthetische Zeile `12 BP 00 0 0 08001234 30 BBFF` wird strikt geparst;
+sechste Spalte = BP-Adresse. Die neue neunte Spalte (Fensterhöhe in Kacheln,
+z. B. `... BBFF 4`) ist optional. Breite und Höhe sind Dezimalzahlen.
+Andere Zusatzspalten oder unvollständige Hexbytes gelten nicht als Zielbeleg.
 
-Grün erfordert passenden ROM-SHA-256, Ziel-BP, DONE, Screenshot-Mindestzahl, keine strukturell ungültigen Root-PNGs und beide nichtleeren Logs ohne erkannten Fatal-Marker. Muster: fatal, panic, segmentation fault, assertion failed, Python-Traceback-Kopf, `Illegal opcode`, `Stub software interrupt`. Vorhandene Runner-Befunde `ABSTURZ.txt` oder `FREEZE.txt` führen ebenfalls zu rot, auch bei leerem Dateiinhalt. Konservative Pilotregel; echte Marker und harmlose Erwähnungen müssen kalibriert werden.
+Für Msgbox-Läufe kann das private Manifest zusätzlich oder alternativ einen
+konkreten Textbeleg aus einem ausdrücklich benannten RAM-Puffer anfordern:
+
+```json
+{"schema":1,"scenario":"synthetic-buffer","rom_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","expected_buffer_bp":"02021D07","expected_hex":"AABBCCDD","min_screenshots":1}
+```
+
+`expected_hex` umfasst 4 bis 4096 vollständige Bytes ohne Leerzeichen. Nur eine
+Bytefolge im Hexfeld einer BP-Zeile mit exakt dieser RAM-Adresse zählt; Textzeilen,
+andere Puffer, ROM-Adressen und Treffer zwischen Hex-Halbbytes zählen nicht.
+Vorhandenes `expected_bp` bleibt als alternativer Adressbeleg möglich.
+`target_evidence` nennt `bp_address`, `buffer_hex` oder `missing`, ohne private
+Adressen/Bytes auszugeben. Die Signatur muss vom Szenario-Owner ausreichend
+eindeutig gewählt und am gestarteten Build gebunden werden. Ein Pufferbeleg
+beweist beobachtete Bytes, keine Herkunft von einem bestimmten ROM-Zeiger und
+keine Rendering-/Szenenfreigabe. Diese Anpassung folgt Issue2/6547484231;
+der neue echte G2c-Beweislauf ist projektseitig nachzuprüfen.
+
+Grün erfordert passenden ROM-SHA-256, Zielbeleg (BP-Adresse oder explizite RAM-Bytefolge), DONE, Screenshot-Mindestzahl, keine strukturell ungültigen Root-PNGs und beide nichtleeren Logs ohne erkannten Fatal-Marker. Muster: fatal, panic, segmentation fault, assertion failed, Python-Traceback-Kopf, `Illegal opcode`, `Stub software interrupt`. Vorhandene Runner-Befunde `ABSTURZ.txt` oder `FREEZE.txt` führen ebenfalls zu rot, auch bei leerem Dateiinhalt. Konservative Pilotregel; echte Marker und harmlose Erwähnungen müssen kalibriert werden.
 
     python3 coverage_check.py --manifest /privat/szenario.json --rom /privat/build.gba --run-dir /privat/frischer-lauf
 
@@ -29,7 +50,7 @@ Jedes Szenario benötigt einen frischen getrennten Laufordner. Der Checker allei
     python3 -m unittest discover -s tests -v
     python3 benchmark_coverage.py
 
-39 Tool-Tests (18 Coverage, 8 Binding, 2 Replay, 11 PNG-Struktur), ausschließlich im isolierten Pilot. Die frühere lokale Report-Prototyp-Suite gehört nicht zu diesem PR. Der Benchmark nutzt 1 gültigen und 5 ungültige synthetische Läufe. Die vereinfachte Regel „Text vorhanden“ illustriert nur den beschriebenen Fehler; sie ist nicht Nevios tatsächlicher Gate-Code. Vorher/Nachher am echten Runner bleibt offen.
+49 Tool-Tests (28 Coverage, 8 Binding, 2 Replay, 11 PNG-Struktur), ausschließlich im isolierten Pilot. Die frühere lokale Report-Prototyp-Suite gehört nicht zu diesem PR. Der Benchmark nutzt 1 gültigen und 5 ungültige synthetische Läufe. Die vereinfachte Regel „Text vorhanden“ illustriert nur den beschriebenen Fehler; sie ist nicht Nevios tatsächlicher Gate-Code. Vorher/Nachher am echten Runner bleibt offen.
 
 Nachgehärtet: leere/Whitespace-Logs sind rot; doppelte JSON-Manifest-Schlüssel werden als Eingabefehler abgelehnt, statt still einen Wert zu überschreiben.
 

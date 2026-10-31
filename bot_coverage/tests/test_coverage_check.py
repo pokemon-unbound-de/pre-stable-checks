@@ -80,6 +80,60 @@ class CoverageTest(unittest.TestCase):
     def test_decimal_width_three_digits(self):
         self.assertEqual(self.run_check(textlog='12 BP 00 0 0 08001234 240 BBFF')['coverage'], 'green')
 
+    def test_optional_window_height(self):
+        result=self.run_check(textlog='12 BP 00 0 0 08001234 240 BBFF 4')
+        self.assertEqual(result['coverage'],'green')
+        self.assertEqual(result['target_evidence'],'bp_address')
+
+    def test_unknown_extra_columns_rejected(self):
+        for tail in ('4 5','-4','four'):
+            self.assertIn('target_bp_missing',self.run_check(textlog='12 BP 00 0 0 08001234 8 BBFF '+tail)['reasons'])
+
+    def buffer_manifest(self):
+        return {**self.manifest,'expected_hex':'AABBCCDD','expected_buffer_bp':'02021D07'}
+
+    def test_named_RAM_buffer_hex_evidence(self):
+        for suffix in ('',' 4'):
+            result=self.run_check(manifest=self.buffer_manifest(),textlog='12 BP 00 0 0 02021D07 30 00AABBCCDDFF'+suffix)
+            self.assertEqual(result['coverage'],'green')
+            self.assertEqual(result['target_evidence'],'buffer_hex')
+            self.assertFalse(result['release_authorization'])
+
+    def test_hex_only_target_contract(self):
+        manifest=self.buffer_manifest();del manifest['expected_bp']
+        self.assertEqual(self.run_check(manifest=manifest,textlog='12 BP 00 0 0 02021D07 30 AABBCCDD')['target_evidence'],'buffer_hex')
+
+    def test_hex_does_not_match_other_buffer_or_plain_text(self):
+        for line in ('12 BP 00 0 0 02021D08 30 AABBCCDD 4','12 TEXT 02021D07 AABBCCDD',
+                     '12 BP 00 0 0 08005678 30 AABBCCDD 4'):
+            self.assertIn('target_bp_missing',self.run_check(manifest=self.buffer_manifest(),textlog=line)['reasons'])
+
+    def test_byte_alignment_required(self):
+        # Text substring AA BB CC DD exists in these hex characters, not in decoded byte boundaries.
+        self.assertIn('target_bp_missing',self.run_check(manifest=self.buffer_manifest(),textlog='12 BP 00 0 0 02021D07 30 0AABBCCDDF')['reasons'])
+
+    def test_odd_log_hex_rejected(self):
+        self.assertIn('target_bp_missing',self.run_check(manifest=self.buffer_manifest(),textlog='12 BP 00 0 0 02021D07 30 AABBCCDDF')['reasons'])
+
+    def test_hex_match_keeps_other_failure_guards(self):
+        result=self.run_check(manifest=self.buffer_manifest(),textlog='12 BP 00 0 0 02021D07 30 AABBCCDD 4',done=False)
+        self.assertEqual(result['target_evidence'],'buffer_hex')
+        self.assertIn('done_missing',result['reasons'])
+        self.assertEqual(result['coverage'],'red')
+
+    def test_hex_target_validation(self):
+        for updates in ({'expected_hex':'AA'},{'expected_hex':'AABBCCD'},
+                        {'expected_hex':'AABBCCDG'},{'expected_hex':True},
+                        {'expected_buffer_bp':'08001234'},{'expected_buffer_bp':'bad'}):
+            with self.assertRaises(ValueError):self.run_check(manifest={**self.buffer_manifest(),**updates})
+        for missing in ('expected_buffer_bp','expected_hex'):
+            manifest=self.buffer_manifest();del manifest[missing]
+            with self.assertRaises(ValueError):self.run_check(manifest=manifest)
+
+    def test_missing_target_contract(self):
+        manifest=dict(self.manifest);del manifest['expected_bp']
+        with self.assertRaises(ValueError):self.run_check(manifest=manifest)
+
     def test_illegal_opcode_red(self):
         self.assertIn('fatal_log', self.run_check(emulator_log='mGBA: Illegal opcode')['reasons'])
 

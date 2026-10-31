@@ -1,0 +1,40 @@
+{
+  "after": {
+    "exit_code": 2,
+    "report": {
+      "binding": "matched",
+      "coverage": "red",
+      "invalid_screenshots": 17,
+      "reasons": [
+        "screenshots_insufficient",
+        "screenshots_invalid"
+      ],
+      "release_authorization": false,
+      "scenario": "synthetic-menu",
+      "schema": 1,
+      "screenshots": 0
+    }
+  },
+  "baseline_commit": "6e90451d5f52480e3dbdbe4baa4e35d17251ec31",
+  "before": {
+    "exit_code": 0,
+    "report": {
+      "binding": "matched",
+      "coverage": "green",
+      "reasons": [],
+      "release_authorization": false,
+      "scenario": "synthetic-menu",
+      "schema": 1,
+      "screenshots": 17
+    }
+  },
+  "code_sha256": {
+    "coverage_check.py": "59fa461d046ab08c2cf9a932f9aaf8e64792693667c0951ae3a4c51a3981c904",
+    "png_evidence.py": "614c0859aaaafb5a08a35e7dbe7aeda895d05af15784c2f80500024fbe3b5ce0"
+  },
+  "emulator_executed": false,
+  "header_only_files": 17,
+  "real_runner_integration": false,
+  "schema": 1,
+  "synthetic": true
+}

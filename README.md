@@ -21,14 +21,23 @@ Prüft pro Zeile die Spalten `en` und `de` eines Korpus-CSVs
 
 | Code | Prüfung |
 |---|---|
-| `unknown_escape` (C1) | Backslash-Folge, die nicht in der Escape-Grammatik des Spiels ist (Referenz: `BACKSLASH_CODES` in `lib/pcs_text.py`) |
+| `unknown_escape` (C1) | Unbekannte Backslash-Folge in DE nach der lokalen Referenz-Grammatik |
+| `reference_unknown_escape` | Unbekannte Escape-Notation im EN-Original: informativ, kein DE-Formatfehler und keine Encoding-Freigabe |
 | `quote_imbalance` (C2) | Kaputte Zitat-Paarung: `\qc` ohne Oeffnung oder ungeschlossenes Zitat. Gültige Paare: `(\qo,\qc)` und `(\qo,\qo)` |
 | `malformed_bracket` (C3) | `[#..]`-Rohbytefolge in ungültiger Form (ungerade Hex oder nicht-hex; **gerade Hex = gültig** nach Encoder-Regel) |
-| `fc_odd_shape` (C4) | FC + 10 Hex — **informativ**: syntaktisch gültige Rohbytefolge, semantisch zu prüfen; zählt **nicht** gegen die Formatgültigkeit |
+| `fc_odd_shape` (C4) | Kompakte FC-Notation ohne `#` mit 10 Hex: informativ. Gerade `[#…]`-Rohbytefolgen, einschließlich kombinierter FC-Folgen, erzeugen keinen solchen Hinweis. |
 | `byte_overflow` (B1) | Vorlagen-Zeile: `de_kurz_vorschlag` > `max_bytes` (GBA-PCS-Bytes, 1 Byte/Zeichen) |
 | `pixel_over` (B2) | Zeilen-Pixelbreite > `--max-pixels` (nur mit Flag; Default: nur Aggregat-Statistik, da Bildschirm-Limits je Screen/Buffer unterschiedlich sind) |
 
 ### Nutzung
+
+Anpassung nach Nevios Rückmeldung in Datenrepo Issue #2/6547484231:
+zusammengefasste Rohbytefolgen wie `[#FC134BFC0600]` sind syntaktisch gültig.
+Der Prüfer leitet daraus keine FC-Handler-/Parametersemantik ab. EN-Originale
+werden nicht verändert; unbekannte Quellnotation bleibt gesondert sichtbar.
+43 Format-Tests einschließlich ungültiger Rohbytefolgen und getrennter
+EN-/DE-Beurteilung bestehen. Historische Kalibrierungszahlen unten beziehen
+sich auf den damaligen Prüferstand.
 
 ```bash
 python3 buffer_validator.py \

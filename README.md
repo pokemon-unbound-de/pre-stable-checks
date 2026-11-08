@@ -1,5 +1,7 @@
 # pre-stable-checks
 
+> **English:** Pre-stable tools for the Pokémon Unbound DE translation: a format/buffer validator for game texts and a stable-window tracker. Python standard library only, deterministic, no network access.
+
 Tools fuer den Stable-Uebergang der Pokémon-Unbound-DE-Übersetzung
 (Pre-Stable → Stable). Zwei unabhängige Python-Tools, **nur
 Python-Standardbibliothek**, deterministisch, ohne Netzwerkzugriff:

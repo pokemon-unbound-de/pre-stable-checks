@@ -158,12 +158,13 @@ class TestBracketChecks(unittest.TestCase):
     def test_fc_odd_shape(self):
         # FC + 10 Hex: C4 ist INFORMATIV (syntaktisch gültige
         # Rohbytefolge, semantisch zu prüfen) — kein C3.
-        for t in ("[#FC134BFC0600]", "[FC134BFC0600]", "[#FC1355FC0600]"):
-            self.assertEqual(self.codes(t), ["fc_odd_shape"], msg=t)
+        self.assertEqual(self.codes("[FC134BFC0600]"),["fc_odd_shape"])
+        for t in ("[#FC134BFC0600]","[#FC1355FC0600]","[#FC1301FC0601FC0102]"):
+            self.assertEqual(self.codes(t), [], msg=t)
 
     def test_mehrere_klammern(self):
         dets = [c for c, _ in bv.check_text("[#FD01][foo][#FC134BFC0600]")]
-        self.assertEqual(dets, ["malformed_bracket", "fc_odd_shape"])
+        self.assertEqual(dets, ["malformed_bracket"])
 
     def test_c1_und_c3_zusammen(self):
         dets = [(c) for c, _ in bv.check_text("a\\Pb[foo]")]
@@ -228,11 +229,21 @@ class TestEncoderDifferential(unittest.TestCase):
             self.assertEqual(encodable, not has_c3,
                              f"Differenz {tok}")
 
-    def test_fc10_is_c4_not_c3(self):
+    def test_raw_combined_fc_is_valid_without_diagnostic(self):
         # FC + 10 Hex: Encoder konsumiert (gerade), Validator meldet
         # nur C4 (informativ), kein C3.
         codes = [c for c, _ in bv.check_text("[#FC134BFC0600]")]
-        self.assertEqual(codes, ["fc_odd_shape"])
+        self.assertEqual(codes, [])
+
+    def test_reference_escape_is_informative_without_normalization(self):
+        text=r"Base[FC13]&EVs[FC13]\PoIVs"
+        self.assertIn('reference_unknown_escape',[c for c,_ in bv.check_text(text,reference=True)])
+        self.assertIn('unknown_escape',[c for c,_ in bv.check_text(text)])
+        self.assertEqual(text,r"Base[FC13]&EVs[FC13]\PoIVs")
+
+    def test_malformed_combined_raw_sequence_still_rejected(self):
+        for text in ('[#FC134BFC060]','[#FC13ZZFC0600]'):
+            self.assertIn('malformed_bracket',[c for c,_ in bv.check_text(text)])
 
 
 class TestLinePixelWidths(unittest.TestCase):
@@ -299,7 +310,7 @@ class TestReport(unittest.TestCase):
         # 1x C1 (unbekanntes Escape in DE), 1x C4 (informativ),
         # 1 gültige gerade Rohbytefolge (kein Befund, Regression).
         rows.append("K-001;Hi;Hallo \\P[#FEFD02FC09]abc;text;ort1")
-        rows.append("K-002;Ok;[#FC134BFC0600]geht;text;ort2")
+        rows.append("K-002;Source \\P;[#FC134BFC0600]geht;text;ort2")
         rows.append("K-003;Clean;[#0A]gut;text;ort3")
         with open(pfad, "w", encoding="utf-8", newline="") as fh:
             fh.write("\n".join(rows) + "\n")

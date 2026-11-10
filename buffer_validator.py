@@ -292,17 +292,17 @@ def c2_quote_findings(text: str):
     return []
 
 
-def check_text(text: str):
+def check_text(text: str, *, reference=False):
     """C1–C4-Befunde einer Textspalte: List[(code, detail)]."""
     findings = []
     for d in c1_unknown_escapes(text):
-        findings.append(("unknown_escape", d))
+        findings.append(("reference_unknown_escape" if reference else "unknown_escape", d))
     for d in c2_quote_findings(text):
         findings.append(("quote_imbalance", d))
     for m in BRACKET_RE.finditer(text):
         tok = m.group(1)
         core = tok[1:] if tok.startswith("#") else tok
-        if _fc_odd(core):
+        if _fc_odd(core) and not tok.startswith("#"):
             # Informativ (keine Formatgueltigkeit): gerade
             # Rohbytefolge, semantisch zu pruefen.
             findings.append(("fc_odd_shape",
@@ -405,7 +405,7 @@ def run(korpus_pfad, vorlagen_pfad, out_dir, max_pixels=None):
         ort = (row.get("ort") or "").strip()
         for spalte in ("en", "de"):
             text = row.get(spalte) or ""
-            for code, detail in check_text(text):
+            for code, detail in check_text(text,reference=spalte=='en'):
                 findings.append((rid, kate, ort, spalte, code, detail))
             widths = line_pixel_widths(text)
             pixel_all.extend(widths)
@@ -457,7 +457,7 @@ def run(korpus_pfad, vorlagen_pfad, out_dir, max_pixels=None):
                      if pixel_all else 0)
     # Trennung: C1/C2/C3 (+B1/B2 falls aktiv) zaehlen gegen die
     # Formatgueltigkeit; C4 (fc_odd_shape) ist nur informativ.
-    INFO_CODES = frozenset(("fc_odd_shape",))
+    INFO_CODES = frozenset(("fc_odd_shape","reference_unknown_escape"))
     n_format = sum(len(v) for c, v in by_code.items()
                    if c not in INFO_CODES)
     n_info = sum(len(v) for c, v in by_code.items()
@@ -474,6 +474,7 @@ def run(korpus_pfad, vorlagen_pfad, out_dir, max_pixels=None):
         "|---|---|---|",
     ]
     meanings = {
+        "reference_unknown_escape": "Quellnotation: unbekanntes EN-Original-Escape; kein DE-Formatfehler und keine Encoding-Freigabe",
         "unknown_escape": "C1: Backslash-Folge nicht in der Escape-"
                           "Grammatik (Referenz: BACKSLASH_CODES)",
         "quote_imbalance": "C2: kaputte Zitat-Paarung (\\qc ohne "
@@ -509,8 +510,9 @@ def run(korpus_pfad, vorlagen_pfad, out_dir, max_pixels=None):
         "",
         "## Pruef-Abgrenzung (was dieses Tool prueft und was nicht)",
         "",
-        "- Formatgueltigkeit (C1/C2/C3): alle Korpus-Zeilen, Spalten "
-        "`en` und `de`.",
+        "- Formatpruefung (C1/C2/C3): alle Korpus-Zeilen. Unbekannte "
+        "EN-Original-Escapes bleiben als reference_unknown_escape informativ; "
+        "DE-Escapes bleiben formatrelevant.",
         f"- B1 (byte_overflow): nur die {n_vorlagen} Zeilen der "
         "Vorlagen-Datei (bekannte Buffer-Limits; Template-Adressen "
         "sind ROM-Adressen, keine Korpus-IDs).",
@@ -521,9 +523,10 @@ def run(korpus_pfad, vorlagen_pfad, out_dir, max_pixels=None):
         "Untergrenze.",
         "- NICHT geprueft: Laufzeit-Verhalten, echtes Screen-Layout, "
         "ROM-Tabellen.",
-        "- C4 (fc_odd_shape) ist informativ: syntaktisch gueltige "
-        "Rohbytefolge (gerade Hex nach Encoder-Regel), semantisch zu "
-        "pruefen — zaehlt nicht gegen die Formatgueltigkeit.",
+        "- Gerade [#..]-Rohbytefolgen, auch kombinierte FC-Folgen, sind "
+        "syntaktisch gueltig und erzeugen keinen C4-Hinweis. Keine Aussage "
+        "ueber FC-Handler-/Parametersemantik. C4 bleibt nur bei der "
+        "kompakten FC-Notation ohne # informativ.",
         "",
         "## Formatgueltigkeits-Urteil (C1/C2/C3 + B1, innerhalb der "
         "Pruef-Abgrenzung)",
@@ -537,7 +540,7 @@ def run(korpus_pfad, vorlagen_pfad, out_dir, max_pixels=None):
                      f"'Befund-Beispiele') — Pruefung erforderlich.")
     if n_info:
         lines.append(f"- Informative Befunde (keine Formatfehler): "
-                     f"{n_info} (C4).")
+                      f"{n_info} (Quellnotation/C4).")
     lines += [
         "",
         "## Befund-Beispiele (IDs ohne Textinhalte)",
